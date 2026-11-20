@@ -88,7 +88,7 @@ def generate_script_section(
 只輸出可直接朗讀的正文，不要 Markdown、條列符號、網址、製作說明或單元標題。"""
 
     response = client.interactions.create(
-        model=os.getenv("GEMINI_TEXT_MODEL", "gemini-3.1-flash-lite"),
+        model=os.getenv("GEMINI_TEXT_MODEL", "gemini-3.5-flash-lite"),
         input=prompt,
         tools=[{"type": "google_search"}],
     )
