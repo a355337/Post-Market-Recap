@@ -14,6 +14,14 @@ Copy-Item .env.example .env
 
 編輯 `.env`，將 `GEMINI_API_KEY` 設為自己的 API key。不要提交 `.env`。
 
+## 測試 Gemini 文字模型
+
+```powershell
+.\.venv\Scripts\python.exe gemini_check.py
+```
+
+此工具只呼叫 `gemini-3.1-flash-lite` 做一次文字生成，用來確認 API key 與文字模型是否可用；錯誤時會顯示 HTTP 狀態與訊息。
+
 ## 立即測試
 
 ```powershell
@@ -46,7 +54,7 @@ Unregister-ScheduledTask -TaskName TaiwanMarketPodcast -Confirm:$false
 
 預設輸出在 `output/`：MP3、逐字稿、Google Search 引用來源及執行記錄。Gemini TTS WAV 會暫存後轉成 MP3，不需要另行安裝 FFmpeg。
 
-可在 `.env` 覆寫 `GEMINI_TEXT_MODEL`、`GEMINI_TTS_MODEL` 與 `GEMINI_TTS_VOICE`。腳本會記錄實際音訊長度；播讀速度與 Gemini 生成內容會使每集長度略有差異。
+預設文字模型為 `gemini-3.1-flash-lite`，語音模型為 `gemini-3.8-flash-lite-tts`。可在 `.env` 覆寫 `GEMINI_TEXT_MODEL`、`GEMINI_TTS_MODEL` 與 `GEMINI_TTS_VOICE`。腳本會記錄實際音訊長度；播讀速度與 Gemini 生成內容會使每集長度略有差異。
 
 內容僅供資訊參考，不構成投資建議。
 
