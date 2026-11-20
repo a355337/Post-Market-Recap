@@ -2,10 +2,18 @@ from __future__ import annotations
 
 import unittest
 from datetime import date, datetime, time, timedelta
+from types import SimpleNamespace
+from unittest.mock import Mock
 
 import holidays
 
-from podcast import TAIPEI, is_taiwan_workday, next_run_at_or_after
+from news_sources import SourceItem
+from podcast import (
+    TAIPEI,
+    generate_script_section,
+    is_taiwan_workday,
+    next_run_at_or_after,
+)
 
 
 class TaiwanWorkdayTests(unittest.TestCase):
@@ -43,6 +51,64 @@ class SchedulerTests(unittest.TestCase):
     def test_naive_datetime_is_rejected(self) -> None:
         with self.assertRaises(ValueError):
             next_run_at_or_after(datetime(2026, 11, 20, 5, 0))
+
+
+class ScriptGenerationTests(unittest.TestCase):
+    def test_generates_from_supplied_sources_without_search_grounding(self) -> None:
+        client = Mock()
+        client.models.generate_content.return_value = SimpleNamespace(
+            text="市場消息摘要。[S01]"
+        )
+        source = SourceItem(
+            source_id="S01",
+            category="news",
+            source_name="Example News",
+            title="Market update",
+            url="https://example.com/market",
+            published="2026-11-20",
+            summary="Markets moved.",
+        )
+
+        text, cited_sources = generate_script_section(
+            client,
+            date(2026, 11, 20),
+            1,
+            "開場",
+            "市場",
+            [source],
+        )
+
+        self.assertEqual(text, "市場消息摘要。[S01]")
+        self.assertEqual(cited_sources, {"S01"})
+        client.interactions.create.assert_not_called()
+        prompt = client.models.generate_content.call_args.kwargs["contents"]
+        self.assertIn("https://example.com/market", prompt)
+        self.assertNotIn("google_search", prompt)
+
+    def test_rejects_unknown_source_marker(self) -> None:
+        client = Mock()
+        client.models.generate_content.return_value = SimpleNamespace(
+            text="未確認消息。[S99]"
+        )
+        source = SourceItem(
+            source_id="S01",
+            category="news",
+            source_name="Example News",
+            title="Market update",
+            url="https://example.com/market",
+            published="2026-11-20",
+            summary="Markets moved.",
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "unknown source IDs"):
+            generate_script_section(
+                client,
+                date(2026, 11, 20),
+                1,
+                "開場",
+                "市場",
+                [source],
+            )
 
 
 if __name__ == "__main__":
