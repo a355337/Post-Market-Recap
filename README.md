@@ -1,6 +1,6 @@
 # 台灣上班日美股財經 Podcast
 
-每天台灣時間早上 06:00（週一至週五、排除台灣國定假日），使用 Gemini 搜尋最新美股資訊、撰寫約 30 分鐘的繁體中文口播稿，並合成 MP3。每集另存逐字稿與搜尋引用來源。
+每天台灣時間早上 06:00（週一至週五、排除台灣國定假日），收集 RSS／官方資料後使用 Gemini 撰寫約 30 分鐘的繁體中文口播稿，並合成 MP3。每集另存逐字稿與來源清單。
 
 ## 安裝
 
@@ -13,6 +13,16 @@ Copy-Item .env.example .env
 ```
 
 編輯 `.env`，將 `GEMINI_API_KEY` 設為自己的 API key。不要提交 `.env`。
+
+## 單獨測試 Twelve Data API key
+
+在 `.env` 設定 `TWELVE_DATA_API_KEY` 後，執行一次 SPY 報價請求：
+
+```powershell
+.\.venv\Scripts\python.exe twelve_data_check.py
+```
+
+可用 `--symbol QQQ` 或 `--symbol DIA` 改測其他 ETF。程式不會輸出 API key。
 
 ## 測試 Gemini 文字與搜尋
 
