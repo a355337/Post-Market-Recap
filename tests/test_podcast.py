@@ -17,6 +17,7 @@ from podcast import (
     generate_episode_summary,
     generate_spotify_description,
     is_taiwan_workday,
+    load_recent_episode_context,
     next_episode_number,
     next_run_at_or_after,
 )
@@ -60,6 +61,59 @@ class SchedulerTests(unittest.TestCase):
 
 
 class ScriptGenerationTests(unittest.TestCase):
+    def test_recent_episode_context_is_included_as_nonfactual_context(self) -> None:
+        client = Mock()
+        client.models.generate_content.return_value = SimpleNamespace(
+            text="市場消息摘要。[S01]"
+        )
+        source = SourceItem(
+            source_id="S01",
+            category="news",
+            source_name="Example News",
+            title="Market update",
+            url="https://example.com/market",
+            published="2026-11-23",
+            summary="Markets moved.",
+        )
+
+        generate_script_section(
+            client,
+            date(2026, 11, 23),
+            1,
+            "開場",
+            "市場",
+            [source],
+            "【前集逐字稿：2026-11-20】\n前集內容",
+        )
+
+        prompt = client.models.generate_content.call_args.kwargs["contents"]
+        self.assertIn("前集內容", prompt)
+        self.assertIn("不得沿用其中的新聞或數字", prompt)
+        self.assertIn("下方本段來源再次支持", prompt)
+
+    def test_loads_only_latest_prior_transcripts(self) -> None:
+        with TemporaryDirectory() as directory:
+            output_dir = Path(directory)
+            (output_dir / "美股財經Podcast_20261118.txt").write_text(
+                "較早逐字稿", encoding="utf-8"
+            )
+            (output_dir / "美股財經Podcast_20261120.txt").write_text(
+                "最近逐字稿", encoding="utf-8"
+            )
+            (output_dir / "美股財經Podcast_20261123.txt").write_text(
+                "當日逐字稿", encoding="utf-8"
+            )
+            (output_dir / "其他逐字稿.txt").write_text("不相關", encoding="utf-8")
+
+            context = load_recent_episode_context(
+                output_dir, date(2026, 11, 23)
+            )
+
+        self.assertIn("最近逐字稿", context)
+        self.assertIn("較早逐字稿", context)
+        self.assertNotIn("當日逐字稿", context)
+        self.assertNotIn("不相關", context)
+
     def test_prompt_limits_greeting_and_signoff_to_episode_edges(self) -> None:
         source = SourceItem(
             source_id="S01",
