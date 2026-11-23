@@ -37,8 +37,8 @@ TEXT_MODEL_DEFAULT = "gemini-4-hydrogen"
 TTS_MODEL_DEFAULT = "gemini-3.8-flash-tts"
 TTS_HOST_A_DEFAULT = "Kore"
 TTS_HOST_B_DEFAULT = "Puck"
-TTS_HOST_A_LABEL = "主持人甲"
-TTS_HOST_B_LABEL = "主持人乙"
+TTS_HOST_A_LABEL = "陳知衡"
+TTS_HOST_B_LABEL = "林語晨"
 GEMINI_RETRY_ATTEMPTS = 5
 GEMINI_RETRY_INITIAL_DELAY = 1.0
 GEMINI_RETRY_MAX_DELAY = 60.0
@@ -205,10 +205,12 @@ def generate_script_section(
 只能依據以下資料陳述新聞事實，不可使用外部搜尋、模型記憶或自行補資料。來源若沒有提供某項行情數字，就不可猜測指數點位、漲跌幅或事件日期。
 每項事實至少附一個來源標記，例如 [S01]；只能使用下方列出的來源 ID。行情來源若標示 ETF proxy，必須明確說是 ETF 代理標的，不可稱為指數實際點位。
 用自然、清楚的繁體中文口語撰寫約 750 至 900 個中文字，適合一般語速播讀。
-設定為雙主持人對話格式：固定主持人甲負責開展與數據解讀，主持人乙負責提問、串接與補充觀點。
+設定為雙主持人對話格式：
+陳知衡：沉穩、理性且具市場分析感，擅長拆解數據、釐清因果與區分事實與推測；語氣像資深但親切的財經分析師。
+林語晨：好奇、機敏且貼近一般投資人的疑問，擅長追問關鍵點、串接前後脈絡並補充生活化觀點；語氣自然、有親和力且不煽動。
 兩位主持人輪流自然對談，避免逐句機械接棒；每段台詞單獨一行，使用以下格式：
-主持人甲：台詞
-主持人乙：台詞
+陳知衡：台詞
+林語晨：台詞
 每位主持人至少出現一次，對話不能只有單一主持人念稿。
 各單元會依序合成為同一集節目，請遵守上述位置要求，避免重複其他單元、投資喊單、保證獲利或未經證實的傳聞。對市場變化提供平衡說明，不構成投資建議。
 只輸出正文；來源標記 [S01] 等會在逐字稿保留、播音前移除。不要輸出 Markdown、網址、製作說明或單元標題。
@@ -449,7 +451,20 @@ def _load_episode_cache(
     )
 
 
+def normalize_host_labels(text: str) -> str:
+    """Convert legacy generic speaker labels so cached and new scripts share the named hosts."""
+    return "\n".join(
+        line.replace("主持人甲：", f"{TTS_HOST_A_LABEL}：", 1)
+        if line.startswith("主持人甲：")
+        else line.replace("主持人乙：", f"{TTS_HOST_B_LABEL}：", 1)
+        if line.startswith("主持人乙：")
+        else line
+        for line in text.splitlines()
+    )
+
+
 def synthesize_section(client: Any, text: str) -> bytes:
+    text = normalize_host_labels(text)
     host_a_voice = os.getenv("GEMINI_TTS_HOST_A_VOICE", TTS_HOST_A_DEFAULT)
     host_b_voice = os.getenv("GEMINI_TTS_HOST_B_VOICE", TTS_HOST_B_DEFAULT)
     tts_model = os.getenv("GEMINI_TTS_MODEL", TTS_MODEL_DEFAULT)
@@ -660,9 +675,12 @@ def create_episode(episode_date: date, output_dir: Path) -> Path:
         )
 
     transcript_path = output_dir / f"{episode_name}.txt"
+    normalized_transcript_sections = [
+        normalize_host_labels(section) for section in transcript_sections
+    ]
     transcript_path.write_text(
         f"美股財經 Podcast｜{episode_date.isoformat()}（台灣時間）\n\n"
-        + "\n\n".join(transcript_sections)
+        + "\n\n".join(normalized_transcript_sections)
         + "\n",
         encoding="utf-8",
     )

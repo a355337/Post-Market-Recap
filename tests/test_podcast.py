@@ -147,7 +147,7 @@ class ScriptGenerationTests(unittest.TestCase):
     def test_prompt_requests_two_host_dialogue_format(self) -> None:
         client = Mock()
         client.models.generate_content.return_value = SimpleNamespace(
-            text="主持人甲：市場回顧。[S01]\n主持人乙：接下來看利率。[S01]"
+            text="陳知衡：市場回顧。[S01]\n林語晨：接下來看利率。[S01]"
         )
         source = SourceItem(
             source_id="S01",
@@ -170,8 +170,10 @@ class ScriptGenerationTests(unittest.TestCase):
 
         prompt = client.models.generate_content.call_args.kwargs["contents"]
         self.assertIn("雙主持人對話格式", prompt)
-        self.assertIn("主持人甲：台詞", prompt)
-        self.assertIn("主持人乙：台詞", prompt)
+        self.assertIn("陳知衡：台詞", prompt)
+        self.assertIn("林語晨：台詞", prompt)
+        self.assertIn("沉穩、理性", prompt)
+        self.assertIn("好奇、機敏", prompt)
 
     def test_recent_episode_context_is_included_as_nonfactual_context(self) -> None:
         client = Mock()
@@ -469,7 +471,7 @@ class EpisodeCacheTests(unittest.TestCase):
                 self.assertTrue(cache_path.is_file())
                 transcript_path = output_dir / "美股財經Podcast_20261123.txt"
                 self.assertIn(
-                    "主持人甲：市場走勢。[S01]",
+                    "陳知衡：市場走勢。[S01]",
                     transcript_path.read_text(encoding="utf-8"),
                 )
 
@@ -512,7 +514,7 @@ class PodcastSynthesisTests(unittest.TestCase):
         speaker_configs = speech_config["multi_speaker_voice_config"]["speaker_voice_configs"]
         self.assertEqual(
             [item["speaker"] for item in speaker_configs],
-            ["主持人甲", "主持人乙"],
+            ["陳知衡", "林語晨"],
         )
         self.assertEqual(
             [item["voice_config"]["prebuilt_voice_config"]["voice_name"] for item in speaker_configs],
