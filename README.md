@@ -40,6 +40,20 @@ Copy-Item .env.example .env
 
 依序測試幾個 Gemini 3+ 模型並檢查 grounding 引用。遇到 429 配額錯誤會預設停止，避免重複送出搜尋請求；若仍要繼續測其他模型，可加 `--continue-on-quota`，但可能產生額外費用。
 
+## 獨立上傳至 Spotify for Creators
+
+上傳工具目前獨立於 `podcast.py`。第一次使用時，透過不回顯密碼的提示將 Spotify 密碼存入 Windows keyring：
+
+```powershell
+.\.venv\Scripts\python.exe -c "import getpass,keyring; keyring.set_password('spotify','a355337@gmail.com',getpass.getpass('Spotify password: '))"
+```
+
+使用 Edge 開啟登入及上傳流程；若出現額外驗證，請在瀏覽器完成。登入後選擇正確節目並開啟 **New episode** 上傳表單。工具會上傳 MP3，並從同名 `_Spotify說明.txt` 讀取標題與說明；完成後請檢查頁面，再以右上角 **X** 儲存為草稿。工具不會發布節目，也不會修改主程式。
+
+```powershell
+.\.venv\Scripts\python.exe spotify_uploader.py "output\美股盤後EP2｜美股科技走勢修正.mp3"
+```
+
 ## 立即測試
 
 ```powershell
