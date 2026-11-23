@@ -76,7 +76,7 @@ Unregister-ScheduledTask -TaskName TaiwanMarketPodcast -Confirm:$false
 
 ## 輸出與設定
 
-預設輸出在 `output/`：MP3、逐字稿、Spotify 說明、來源清單及執行記錄。MP3 會額外生成 8 個字內的本集摘要，檔名格式為 `美股盤後EP1｜摘要.mp3`，EP 編號依 `output/` 內既有集數遞增；另產生 100 字內的 Spotify 摘要，存成 `美股盤後EP1｜摘要_Spotify說明.txt`，可直接複製到 Spotify。因 Windows 檔名不能使用半形 `|`，實際使用外觀相近的全形 `｜`。程式從 CNBC、聯準會與 BLS RSS 收集資料，再交給 Gemini 文字模型撰稿，不使用 Google Search grounding。SEC 8-K feed 與 Twelve Data 行情可選擇設定；行情以 SPY、QQQ、DIA ETF 作為指數代理，並非指數本身的點位。未設定行情 API 時，節目不會猜測點位或漲跌幅。
+預設輸出在 `output/`：MP3、逐字稿、Spotify 說明、來源清單及執行記錄。MP3 會額外生成本集摘要，標題以 8 個字內為目標；超過時會記錄警告並仍使用完整摘要命名，檔名格式為 `美股盤後EP1｜摘要.mp3`，EP 編號依 `output/` 內既有集數遞增；另產生 100 字內的 Spotify 摘要，存成 `美股盤後EP1｜摘要_Spotify說明.txt`，可直接複製到 Spotify。因 Windows 檔名不能使用半形 `|`，實際使用外觀相近的全形 `｜`。程式從 CNBC、聯準會與 BLS RSS 收集資料，再交給 Gemini 文字模型撰稿，不使用 Google Search grounding。SEC 8-K feed 與 Twelve Data 行情可選擇設定；行情以 SPY、QQQ、DIA ETF 作為指數代理，並非指數本身的點位。未設定行情 API 時，節目不會猜測點位或漲跌幅。
 
 撰稿時會把輸出資料夾中最近三集逐字稿（每集最多 2,500 字元）附在提示中，協助延續敘事並避免重複。前集內容僅作脈絡參考，不能作為新聞事實或行情數字的依據；所有事實仍須由本段最新來源支持。
 

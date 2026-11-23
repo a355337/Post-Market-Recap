@@ -238,25 +238,12 @@ def generate_episode_summary(client: Any, sections: list[str]) -> str:
     if not isinstance(text, str) or not text.strip():
         raise RuntimeError("Gemini did not return an episode summary.")
     summary = re.sub(r"[\s「」『』《》〈〉“”\"'`。，、；：！？.!?,;:：]+", "", text)
+    if not summary:
+        raise RuntimeError("Gemini did not return an episode summary.")
     if len(summary) > 8:
-        retry_prompt = f"""{prompt}
-
-上一版標題超過 8 個中文字，請濃縮並重新輸出一個 1 至 8 個中文字的標題。
-只輸出標題，不可加標點、引號、空白、EP 編號或說明。
-
-上一版標題：{summary}"""
-        response = _generate_content(
-            client, "episode summary length repair", retry_prompt
-        )
-        text = getattr(response, "text", None)
-        if not isinstance(text, str) or not text.strip():
-            raise RuntimeError("Gemini did not return an episode summary.")
-        summary = re.sub(
-            r"[\s「」『』《》〈〉“”\"'`。，、；：！？.!?,;:：]+", "", text
-        )
-    if not summary or len(summary) > 8:
-        raise RuntimeError(
-            f"Gemini episode summary must be 1-8 characters; received {len(summary)}."
+        logger.warning(
+            "Gemini episode summary exceeded 8 characters (%d); using it as returned.",
+            len(summary),
         )
     if re.search(r'[<>:"/\\|?*\x00-\x1f]', summary):
         raise RuntimeError("Gemini episode summary contains invalid filename characters.")
@@ -311,8 +298,8 @@ def build_episode_mp3_path(
 ) -> Path:
     if episode_number < 1:
         raise ValueError("episode_number must be positive.")
-    if not summary or len(summary) > 8:
-        raise ValueError("summary must contain between 1 and 8 characters.")
+    if not summary:
+        raise ValueError("summary must not be empty.")
     if re.search(r'[<>:"/\\|?*\x00-\x1f]', summary):
         raise ValueError("summary contains invalid filename characters.")
     return output_dir / f"美股盤後EP{episode_number}｜{summary}.mp3"
