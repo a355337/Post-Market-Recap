@@ -33,12 +33,12 @@ DEFAULT_OUTPUT_DIR = BASE_DIR / "output"
 TAIPEI = ZoneInfo("Asia/Taipei")
 RECENT_EPISODE_LIMIT = 3
 RECENT_SCRIPT_CHAR_LIMIT = 2500
+EPISODE_SUMMARY_CHAR_LIMIT = 100
+SPOTIFY_DESCRIPTION_CHAR_LIMIT = 1000
 TEXT_MODEL_DEFAULT = "gemini-4-hydrogen"
 TTS_MODEL_DEFAULT = "gemini-3.8-flash-tts"
 TTS_HOST_A_DEFAULT = "Kore"
-TTS_HOST_B_DEFAULT = "Puck"
 TTS_HOST_A_LABEL = "陳知衡"
-TTS_HOST_B_LABEL = "林語晨"
 GEMINI_RETRY_ATTEMPTS = 5
 GEMINI_RETRY_INITIAL_DELAY = 1.0
 GEMINI_RETRY_MAX_DELAY = 60.0
@@ -205,13 +205,8 @@ def generate_script_section(
 只能依據以下資料陳述新聞事實，不可使用外部搜尋、模型記憶或自行補資料。來源若沒有提供某項行情數字，就不可猜測指數點位、漲跌幅或事件日期。
 每項事實至少附一個來源標記，例如 [S01]；只能使用下方列出的來源 ID。行情來源若標示 ETF proxy，必須明確說是 ETF 代理標的，不可稱為指數實際點位。
 用自然、清楚的繁體中文口語撰寫約 750 至 900 個中文字，適合一般語速播讀。
-設定為雙主持人對話格式：
-陳知衡：沉穩、理性且具市場分析感，擅長拆解數據、釐清因果與區分事實與推測；語氣像資深但親切的財經分析師。
-林語晨：好奇、機敏且貼近一般投資人的疑問，擅長追問關鍵點、串接前後脈絡並補充生活化觀點；語氣自然、有親和力且不煽動。
-兩位主持人輪流自然對談，避免逐句機械接棒；每段台詞單獨一行，使用以下格式：
-陳知衡：台詞
-林語晨：台詞
-每位主持人至少出現一次，對話不能只有單一主持人念稿。
+設定為單一主持人獨白格式：全程由「陳知衡」以沉穩、理性且具市場分析感的資深財經分析師語氣播讀。
+不要使用多位主持人、角色對話、主持人輪流或主持人姓名標籤；直接輸出連續的口語正文。
 各單元會依序合成為同一集節目，請遵守上述位置要求，避免重複其他單元、投資喊單、保證獲利或未經證實的傳聞。對市場變化提供平衡說明，不構成投資建議。
 只輸出正文；來源標記 [S01] 等會在逐字稿保留、播音前移除。不要輸出 Markdown、網址、製作說明或單元標題。
 
@@ -277,7 +272,7 @@ def generate_script_section(
 
 def generate_episode_summary(client: Any, sections: list[str]) -> str:
     prompt = f"""請根據以下美股盤後 podcast 逐字稿，產生一個繁體中文標題摘要。
-標題必須是 1 至 8 個中文字，不可加標點、引號、空白、EP 編號或說明。
+標題必須是 1 至 100 個中文字，不可加引號、空白、EP 編號或說明。
 只輸出標題；不可加入逐字稿沒有的資訊。
 
 逐字稿：
@@ -289,11 +284,13 @@ def generate_episode_summary(client: Any, sections: list[str]) -> str:
     summary = re.sub(r"[\s「」『』《》〈〉“”\"'`。，、；：！？.!?,;:：]+", "", text)
     if not summary:
         raise RuntimeError("Gemini did not return an episode summary.")
-    if len(summary) > 8:
+    if len(summary) > EPISODE_SUMMARY_CHAR_LIMIT:
         logger.warning(
-            "Gemini episode summary exceeded 8 characters (%d); using it as returned.",
+            "Gemini episode summary exceeded %d characters (%d); trimming output.",
+            EPISODE_SUMMARY_CHAR_LIMIT,
             len(summary),
         )
+        summary = summary[:EPISODE_SUMMARY_CHAR_LIMIT]
     if re.search(r'[<>:"/\\|?*\x00-\x1f]', summary):
         raise RuntimeError("Gemini episode summary contains invalid filename characters.")
     return summary
@@ -301,7 +298,7 @@ def generate_episode_summary(client: Any, sections: list[str]) -> str:
 
 def generate_spotify_description(client: Any, sections: list[str]) -> str:
     prompt = f"""請根據以下美股盤後 podcast 逐字稿，撰寫一段適合 Spotify 節目說明的繁體中文摘要。
-摘要最多 100 個中文字，簡潔說明本集涵蓋的市場焦點。只根據逐字稿，不可添加新事實。
+摘要最多 1000 個中文字，簡潔說明本集涵蓋的市場焦點。只根據逐字稿，不可添加新事實。
 只輸出摘要正文，不要標題、引號、條列或 Markdown。
 
 逐字稿：
@@ -313,22 +310,23 @@ def generate_spotify_description(client: Any, sections: list[str]) -> str:
     description = text.strip().strip("「」『』《》〈〉“”\"'`").strip()
     if not description:
         raise RuntimeError(
-            "Gemini Spotify description must contain 1-100 characters; "
+            "Gemini Spotify description must contain 1-1000 characters; "
             "received 0."
         )
-    if len(description) > 100:
+    if len(description) > SPOTIFY_DESCRIPTION_CHAR_LIMIT:
         logger.warning(
-            "Gemini Spotify description exceeded 100 characters (%d); trimming output.",
+            "Gemini Spotify description exceeded %d characters (%d); trimming output.",
+            SPOTIFY_DESCRIPTION_CHAR_LIMIT,
             len(description),
         )
-        within_limit = description[:100]
+        within_limit = description[:SPOTIFY_DESCRIPTION_CHAR_LIMIT]
         sentence_end = max(
             within_limit.rfind(mark) for mark in ("。", "！", "？", "!", "?")
         )
         if sentence_end >= 40:
             description = within_limit[: sentence_end + 1].rstrip()
         else:
-            description = description[:99].rstrip("，、；：,;: ") + "…"
+            description = description[:SPOTIFY_DESCRIPTION_CHAR_LIMIT - 1].rstrip("，、；：,;: ") + "…"
     return description
 
 
@@ -452,27 +450,25 @@ def _load_episode_cache(
 
 
 def normalize_host_labels(text: str) -> str:
-    """Convert legacy generic speaker labels so cached and new scripts share the named hosts."""
+    """Convert legacy and named two-host scripts into one-host narration."""
+    host_prefix = re.compile(
+        r"^(?:陳知衡|林語晨|主持人甲|主持人乙)[：:]\s*",
+        re.UNICODE,
+    )
     return "\n".join(
-        line.replace("主持人甲：", f"{TTS_HOST_A_LABEL}：", 1)
-        if line.startswith("主持人甲：")
-        else line.replace("主持人乙：", f"{TTS_HOST_B_LABEL}：", 1)
-        if line.startswith("主持人乙：")
-        else line
+        host_prefix.sub("", line, count=1) if host_prefix.match(line) else line
         for line in text.splitlines()
     )
 
 
 def synthesize_section(client: Any, text: str) -> bytes:
     text = normalize_host_labels(text)
-    host_a_voice = os.getenv("GEMINI_TTS_HOST_A_VOICE", TTS_HOST_A_DEFAULT)
-    host_b_voice = os.getenv("GEMINI_TTS_HOST_B_VOICE", TTS_HOST_B_DEFAULT)
+    host_voice = os.getenv("GEMINI_TTS_HOST_A_VOICE", TTS_HOST_A_DEFAULT)
     tts_model = os.getenv("GEMINI_TTS_MODEL", TTS_MODEL_DEFAULT)
     logger.info(
-        "TTS request starting: model=%s, host_a_voice=%s, host_b_voice=%s",
+        "TTS request starting: model=%s, host_voice=%s",
         tts_model,
-        host_a_voice,
-        host_b_voice,
+        host_voice,
     )
     response = client.interactions.create(
         model=tts_model,
@@ -490,21 +486,8 @@ def synthesize_section(client: Any, text: str) -> bytes:
         response_format={"type": "audio"},
         generation_config={
             "speech_config": {
-                "multi_speaker_voice_config": {
-                    "speaker_voice_configs": [
-                        {
-                            "speaker": TTS_HOST_A_LABEL,
-                            "voice_config": {
-                                "prebuilt_voice_config": {"voice_name": host_a_voice}
-                            },
-                        },
-                        {
-                            "speaker": TTS_HOST_B_LABEL,
-                            "voice_config": {
-                                "prebuilt_voice_config": {"voice_name": host_b_voice}
-                            },
-                        },
-                    ]
+                "voice_config": {
+                    "prebuilt_voice_config": {"voice_name": host_voice}
                 }
             }
         },

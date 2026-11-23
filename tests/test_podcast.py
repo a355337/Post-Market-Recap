@@ -144,10 +144,10 @@ class SchedulerTests(unittest.TestCase):
 
 
 class ScriptGenerationTests(unittest.TestCase):
-    def test_prompt_requests_two_host_dialogue_format(self) -> None:
+    def test_prompt_requests_one_host_monologue_format(self) -> None:
         client = Mock()
         client.models.generate_content.return_value = SimpleNamespace(
-            text="陳知衡：市場回顧。[S01]\n林語晨：接下來看利率。[S01]"
+            text="市場回顧。[S01]\n接下來看利率。[S01]"
         )
         source = SourceItem(
             source_id="S01",
@@ -169,11 +169,9 @@ class ScriptGenerationTests(unittest.TestCase):
         )
 
         prompt = client.models.generate_content.call_args.kwargs["contents"]
-        self.assertIn("雙主持人對話格式", prompt)
-        self.assertIn("陳知衡：台詞", prompt)
-        self.assertIn("林語晨：台詞", prompt)
+        self.assertIn("單一主持人獨白格式", prompt)
+        self.assertIn("陳知衡", prompt)
         self.assertIn("沉穩、理性", prompt)
-        self.assertIn("好奇、機敏", prompt)
 
     def test_recent_episode_context_is_included_as_nonfactual_context(self) -> None:
         client = Mock()
@@ -471,7 +469,7 @@ class EpisodeCacheTests(unittest.TestCase):
                 self.assertTrue(cache_path.is_file())
                 transcript_path = output_dir / "美股財經Podcast_20261123.txt"
                 self.assertIn(
-                    "陳知衡：市場走勢。[S01]",
+                    "市場走勢。[S01]",
                     transcript_path.read_text(encoding="utf-8"),
                 )
 
@@ -486,7 +484,7 @@ class EpisodeCacheTests(unittest.TestCase):
 
 
 class PodcastSynthesisTests(unittest.TestCase):
-    def test_uses_multi_speaker_config_and_fixed_host_voice_ids(self) -> None:
+    def test_uses_single_speaker_config_and_fixed_host_voice_id(self) -> None:
         client = Mock()
         client.interactions.create.return_value = SimpleNamespace(
             output_audio=SimpleNamespace(data=base64.b64encode(b"audio").decode())
@@ -503,22 +501,21 @@ class PodcastSynthesisTests(unittest.TestCase):
             any(
                 "TTS request starting: model=gemini-3.8-flash-tts"
                 in line
-                and "host_a_voice=Kore" in line
-                and "host_b_voice=Puck" in line
+                and "host_voice=Kore" in line
                 for line in captured.output
             )
         )
         call = client.interactions.create.call_args.kwargs
         self.assertEqual(call["model"], "gemini-3.8-flash-tts")
         speech_config = call["generation_config"]["speech_config"]
-        speaker_configs = speech_config["multi_speaker_voice_config"]["speaker_voice_configs"]
         self.assertEqual(
-            [item["speaker"] for item in speaker_configs],
-            ["陳知衡", "林語晨"],
+            speech_config["voice_config"]["prebuilt_voice_config"]["voice_name"],
+            "Kore",
         )
+        input_text = call["input"][0]["content"][0]["text"]
         self.assertEqual(
-            [item["voice_config"]["prebuilt_voice_config"]["voice_name"] for item in speaker_configs],
-            ["Kore", "Puck"],
+            input_text,
+            "市場今天震盪。\n我們接著看原因。",
         )
 
     def test_logs_environment_overrides_before_tts_request(self) -> None:
@@ -533,7 +530,6 @@ class PodcastSynthesisTests(unittest.TestCase):
                 {
                     "GEMINI_TTS_MODEL": "gemini-test-tts",
                     "GEMINI_TTS_HOST_A_VOICE": "Zephyr",
-                    "GEMINI_TTS_HOST_B_VOICE": "Charon",
                 },
             ),
             self.assertLogs("market_podcast", level="INFO") as captured,
@@ -544,8 +540,7 @@ class PodcastSynthesisTests(unittest.TestCase):
             any(
                 "TTS request starting: model=gemini-test-tts"
                 in line
-                and "host_a_voice=Zephyr" in line
-                and "host_b_voice=Charon" in line
+                and "host_voice=Zephyr" in line
                 for line in captured.output
             )
         )
@@ -566,21 +561,22 @@ class EpisodeNamingTests(unittest.TestCase):
 
         self.assertEqual(summary, "科技股震盪")
 
-    def test_long_summary_warns_and_is_used_for_output_filename(self) -> None:
+    def test_long_summary_warns_and_is_trimmed_to_100_characters(self) -> None:
         client = Mock()
         client.models.generate_content.return_value = SimpleNamespace(
-            text="科技股震盪市場觀望"
+            text="科技股震盪市場觀望" * 20
         )
 
         with self.assertLogs("market_podcast", level="WARNING") as logs:
             summary = generate_episode_summary(client, ["逐字稿內容"])
 
-        self.assertEqual(summary, "科技股震盪市場觀望")
-        self.assertIn("exceeded 8 characters (9)", logs.output[0])
+        self.assertEqual(len(summary), 100)
+        self.assertIn("exceeded 100 characters", logs.output[0])
         path = build_episode_mp3_path(Path("output"), 3, summary)
-        self.assertEqual(path.name, "美股盤後EP3｜科技股震盪市場觀望.mp3")
+        self.assertLessEqual(len(summary), 100)
+        self.assertEqual(path.suffix, ".mp3")
 
-    def test_spotify_description_is_trimmed_and_limited_to_100_characters(self) -> None:
+    def test_spotify_description_is_trimmed_and_limited_to_1000_characters(self) -> None:
         description = "本集聚焦科技股走勢與聯準會利率政策。" * 2
         client = Mock()
         client.models.generate_content.return_value = SimpleNamespace(
@@ -590,24 +586,24 @@ class EpisodeNamingTests(unittest.TestCase):
         result = generate_spotify_description(client, ["逐字稿內容"])
 
         self.assertEqual(result, description)
-        self.assertLessEqual(len(result), 100)
+        self.assertLessEqual(len(result), 1000)
 
-    def test_spotify_description_over_100_characters_is_trimmed(self) -> None:
+    def test_spotify_description_over_1000_characters_is_trimmed(self) -> None:
         client = Mock()
         client.models.generate_content.return_value = SimpleNamespace(
-            text="美股市場焦點" * 20
+            text="美股市場焦點" * 200
         )
 
         result = generate_spotify_description(client, ["逐字稿內容"])
 
-        self.assertEqual(len(result), 100)
+        self.assertEqual(len(result), 1000)
         self.assertTrue(result.endswith("…"))
 
     def test_spotify_description_trims_at_a_sentence_boundary_when_possible(self) -> None:
         sentence = "本集聚焦科技股與市場走勢" * 4 + "。"
         client = Mock()
         client.models.generate_content.return_value = SimpleNamespace(
-            text=sentence + "這是多餘的延伸內容" * 15 + "。"
+            text=sentence + "這是多餘的延伸內容" * 150
         )
 
         result = generate_spotify_description(client, ["逐字稿內容"])
