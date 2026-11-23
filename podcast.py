@@ -167,6 +167,24 @@ def generate_script_section(
     if not isinstance(text, str) or not text.strip():
         raise RuntimeError(f"Gemini did not return text for section {section_number}.")
     cited_source_ids = set(re.findall(r"\[(S\d+)\]", text))
+    if not cited_source_ids:
+        retry_prompt = f"""{prompt}
+
+上一版草稿沒有任何來源標記，請重新撰寫本段並修正。每項事實至少附上一個可用的來源標記，例如 [S01]；只能使用本提示列出的來源 ID，且標記必須支持對應事實。若資料不支持某項事實，請刪除該事實，不可猜測或補造。只輸出修正後正文。
+
+上一版草稿：
+{text}"""
+        response = client.models.generate_content(
+            model=os.getenv("GEMINI_TEXT_MODEL", TEXT_MODEL_DEFAULT),
+            contents=retry_prompt,
+        )
+        text = getattr(response, "text", None)
+        if not isinstance(text, str) or not text.strip():
+            raise RuntimeError(
+                f"Gemini did not return text for section {section_number}."
+            )
+        cited_source_ids = set(re.findall(r"\[(S\d+)\]", text))
+
     invalid_source_ids = cited_source_ids - source_ids
     if invalid_source_ids:
         raise RuntimeError(

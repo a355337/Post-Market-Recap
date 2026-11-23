@@ -236,6 +236,66 @@ class ScriptGenerationTests(unittest.TestCase):
         self.assertIn("https://example.com/market", prompt)
         self.assertNotIn("google_search", prompt)
 
+    def test_retries_once_when_response_has_no_source_citations(self) -> None:
+        client = Mock()
+        client.models.generate_content.side_effect = [
+            SimpleNamespace(text="市場消息摘要。"),
+            SimpleNamespace(text="市場消息摘要。[S01]"),
+        ]
+        source = SourceItem(
+            source_id="S01",
+            category="news",
+            source_name="Example News",
+            title="Market update",
+            url="https://example.com/market",
+            published="2026-11-20",
+            summary="Markets moved.",
+        )
+
+        text, cited_sources = generate_script_section(
+            client,
+            date(2026, 11, 20),
+            3,
+            "市場",
+            "市場消息",
+            [source],
+        )
+
+        self.assertEqual(text, "市場消息摘要。[S01]")
+        self.assertEqual(cited_sources, {"S01"})
+        self.assertEqual(client.models.generate_content.call_count, 2)
+        retry_prompt = client.models.generate_content.call_args.kwargs["contents"]
+        self.assertIn("上一版草稿沒有任何來源標記", retry_prompt)
+        self.assertIn("市場消息摘要。", retry_prompt)
+
+    def test_still_rejects_response_without_citations_after_retry(self) -> None:
+        client = Mock()
+        client.models.generate_content.side_effect = [
+            SimpleNamespace(text="市場消息摘要。"),
+            SimpleNamespace(text="修訂後仍沒有標記。"),
+        ]
+        source = SourceItem(
+            source_id="S01",
+            category="news",
+            source_name="Example News",
+            title="Market update",
+            url="https://example.com/market",
+            published="2026-11-20",
+            summary="Markets moved.",
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "no source citations"):
+            generate_script_section(
+                client,
+                date(2026, 11, 20),
+                3,
+                "市場",
+                "市場消息",
+                [source],
+            )
+
+        self.assertEqual(client.models.generate_content.call_count, 2)
+
     def test_rejects_unknown_source_marker(self) -> None:
         client = Mock()
         client.models.generate_content.return_value = SimpleNamespace(
