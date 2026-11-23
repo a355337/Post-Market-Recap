@@ -48,11 +48,13 @@ Copy-Item .env.example .env
 .\.venv\Scripts\python.exe -c "import getpass,keyring; keyring.set_password('spotify','a355337@gmail.com',getpass.getpass('Spotify password: '))"
 ```
 
-使用 Edge 開啟登入及上傳流程；若出現額外驗證，請在瀏覽器完成。登入後選擇正確節目並開啟 **New episode** 上傳表單。工具會上傳 MP3，並從同名 `_Spotify說明.txt` 讀取標題與說明；完成後請檢查頁面，再以右上角 **X** 儲存為草稿。工具不會發布節目，也不會修改主程式。
+預設優先使用已安裝的 Chrome；也可改用 Playwright Chromium（Ubuntu/CI 可先執行 `python -m playwright install chromium`，並帶上 `--browser chromium`）。若出現額外驗證，請在瀏覽器完成。登入後選擇正確節目並開啟 **New episode** 上傳表單。工具會上傳 MP3，並從同名 `_Spotify說明.txt` 讀取標題與說明；完成後請檢查頁面，再以右上角 **X** 儲存為草稿。工具會等待草稿畫面以確認完成，不會發布節目，也不會修改主程式。
 
 ```powershell
 .\.venv\Scripts\python.exe spotify_uploader.py "output\美股盤後EP2｜美股科技走勢修正.mp3"
 ```
+
+GitHub Actions 的無人值守流程需另行處理認證與人工驗證：Windows keyring 不會隨工作移至 Ubuntu runner；之後應使用 GitHub Actions Secrets 並確認 Spotify 登入驗證是否允許自動化。本工具目前仍需在瀏覽器完成人工驗證、選節目及檢查草稿，尚不能直接放進無人值守工作流程。
 
 ## 立即測試
 

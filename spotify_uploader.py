@@ -2,17 +2,25 @@ from __future__ import annotations
 
 import argparse
 import re
-import sys
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 from dotenv import load_dotenv
-from playwright.sync_api import Page, TimeoutError as PlaywrightTimeoutError
+from playwright.sync_api import (
+    Browser,
+    Page,
+    Playwright,
+    TimeoutError as PlaywrightTimeoutError,
+    sync_playwright,
+)
 
 BASE_DIR = Path(__file__).resolve().parent
 DEFAULT_EMAIL = "a355337@gmail.com"
 KEYRING_SERVICE = "spotify"
 CREATORS_URL = "https://creators.spotify.com/"
+LOGIN_URL = "https://creators.spotify.com/pod/login"
+BrowserName = Literal["chrome", "chromium"]
 
 
 @dataclass(frozen=True)
@@ -44,26 +52,54 @@ def load_episode_metadata(
     return EpisodeMetadata(title=audio_path.stem, description=description)
 
 
-def _wait_for_user(message: str) -> None:
-    if not sys.stdin.isatty():
-        raise RuntimeError(message)
-    input(f"{message}\nPress Enter to continue...")
+def _fill_login_form(page: Page, email: str) -> None:
+    continue_button = page.get_by_role(
+        "button",
+        name=re.compile(r"continue with spotify|使用 Spotify 繼續", re.IGNORECASE),
+    )
+    if continue_button.count():
+        continue_button.first.click()
 
-
-def _fill_login_form(page: Page, email: str, password: str) -> None:
-    email_field = page.locator('input[name="username"], input[type="email"]')
-    if email_field.count() and email_field.first.is_visible():
-        email_field.first.fill(email)
-        email_field.first.press("Enter")
-
-    password_field = page.locator('input[type="password"]')
-    try:
-        password_field.wait_for(state="visible", timeout=15_000)
-    except PlaywrightTimeoutError:
+    if "accounts.spotify.com" not in page.url:
         return
-    if password_field.is_visible():
-        password_field.first.fill(password)
-        password_field.first.press("Enter")
+
+    email_field = page.locator(
+        'input[data-testid="login-username"], input#username'
+    )
+    try:
+        email_field.first.wait_for(state="visible", timeout=20_000)
+    except PlaywrightTimeoutError as error:
+        raise RuntimeError(
+            "Spotify login opened, but its email field was not found."
+        ) from error
+    email_field.first.fill(email)
+    page.get_by_role(
+        "button", name=re.compile(r"continue|繼續", re.IGNORECASE)
+    ).first.click()
+
+
+def _is_logged_in(page: Page) -> bool:
+    return (
+        page.url.startswith(CREATORS_URL)
+        and page.url.split("?", 1)[0].rstrip("/") != LOGIN_URL
+    )
+
+
+def _wait_for_login(page: Page, password: str) -> None:
+    password_submitted = False
+
+    while not _is_logged_in(page):
+        password_field = page.locator('input[type="password"]')
+        if (
+            not password_submitted
+            and password_field.count()
+            and password_field.first.is_visible()
+        ):
+            password_field.first.fill(password)
+            password_field.first.press("Enter")
+            password_submitted = True
+
+        page.wait_for_timeout(500)
 
 
 def _fill_episode_details(page: Page, metadata: EpisodeMetadata) -> None:
@@ -80,13 +116,19 @@ def _fill_episode_details(page: Page, metadata: EpisodeMetadata) -> None:
     description_field.first.fill(metadata.description)
 
 
+def _launch_browser(playwright: Playwright, browser_name: BrowserName) -> Browser:
+    if browser_name == "chrome":
+        return playwright.chromium.launch(channel="chrome", headless=False)
+    return playwright.chromium.launch(headless=False)
+
+
 def upload_episode(
     audio_path: Path,
     email: str = DEFAULT_EMAIL,
     description_path: Path | None = None,
+    browser_name: BrowserName = "chrome",
 ) -> None:
     import keyring
-    from playwright.sync_api import sync_playwright
 
     metadata = load_episode_metadata(audio_path, description_path)
     password = keyring.get_password(KEYRING_SERVICE, email)
@@ -97,24 +139,25 @@ def upload_episode(
         )
 
     with sync_playwright() as playwright:
-        browser = playwright.chromium.launch(channel="msedge", headless=False)
+        browser = _launch_browser(playwright, browser_name)
         page = browser.new_page()
         try:
-            page.goto(CREATORS_URL, wait_until="domcontentloaded")
-            _fill_login_form(page, email, password)
+            page.goto(LOGIN_URL, wait_until="domcontentloaded")
+            _fill_login_form(page, email)
 
-            if "creators.spotify.com" not in page.url:
-                _wait_for_user(
-                    "Complete any Spotify verification in the opened browser."
+            if not _is_logged_in(page):
+                print(
+                    "Complete any Spotify verification in the browser; the "
+                    "keyring password will be entered automatically when requested. "
+                    "Press Ctrl+C to cancel.",
+                    flush=True,
                 )
-                page.wait_for_url(
-                    re.compile(r"^https://creators\.spotify\.com/"),
-                    timeout=180_000,
-                )
+                _wait_for_login(page, password)
 
-            _wait_for_user(
-                "In the browser, choose the correct show and open its New episode "
-                "upload form."
+            print(
+                "Choose the correct show and open its New episode upload form "
+                "in the browser.",
+                flush=True,
             )
             file_input = page.locator('input[type="file"]')
             if not file_input.count():
@@ -126,24 +169,35 @@ def upload_episode(
                 )
                 if select_file.count():
                     select_file.first.click()
-                file_input.wait_for(state="attached", timeout=30_000)
+            try:
+                file_input.wait_for(state="attached", timeout=180_000)
+            except PlaywrightTimeoutError as error:
+                raise RuntimeError(
+                    "The episode upload form was not opened within three minutes."
+                ) from error
             file_input.first.set_input_files(str(audio_path.resolve()))
 
             title_field = page.get_by_label(
                 re.compile(r"title|標題", re.IGNORECASE)
             )
-            title_field.wait_for(state="visible", timeout=180_000)
+            try:
+                title_field.wait_for(state="visible", timeout=180_000)
+            except PlaywrightTimeoutError as error:
+                raise RuntimeError(
+                    "Spotify did not finish processing the audio upload."
+                ) from error
             _fill_episode_details(page, metadata)
 
-            _wait_for_user(
-                "Review the uploaded audio and episode details in the browser. "
-                "Do not publish; close the editor with its X button to save as "
-                "a draft, then return here."
-            )
             print(
-                "Episode details were filled. Confirm the draft is listed in "
-                "Spotify for Creators."
+                f"Uploaded {audio_path.name}; review the details and close the "
+                "editor with its X button to save as a draft. Do not publish.",
+                flush=True,
             )
+            title_field.wait_for(state="hidden", timeout=180_000)
+            page.get_by_text(metadata.title, exact=True).wait_for(
+                state="visible", timeout=60_000
+            )
+            print("Verified the episode title in Spotify for Creators.", flush=True)
         finally:
             browser.close()
 
@@ -155,6 +209,12 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("audio", type=Path, help="Episode MP3 to upload.")
     parser.add_argument("--email", default=DEFAULT_EMAIL, help="Spotify login email.")
     parser.add_argument(
+        "--browser",
+        choices=("chrome", "chromium"),
+        default="chrome",
+        help="Use installed Google Chrome (default) or Playwright Chromium.",
+    )
+    parser.add_argument(
         "--description",
         type=Path,
         help="Description text file (defaults to the MP3's Spotify說明 sidecar).",
@@ -165,7 +225,7 @@ def _parse_args() -> argparse.Namespace:
 def main() -> None:
     load_dotenv(BASE_DIR / ".env")
     args = _parse_args()
-    upload_episode(args.audio, args.email, args.description)
+    upload_episode(args.audio, args.email, args.description, args.browser)
 
 
 if __name__ == "__main__":
