@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import base64
 import io
+import json
 import logging
 import os
 import re
@@ -12,6 +13,7 @@ import threading
 import time
 import wave
 from collections.abc import Callable
+from dataclasses import asdict
 from datetime import date, datetime, time as clock_time, timedelta
 from pathlib import Path
 from typing import Any
@@ -350,6 +352,103 @@ def build_episode_mp3_path(
     return output_dir / f"美股盤後EP{episode_number}｜{summary}.mp3"
 
 
+def _episode_cache_path(output_dir: Path, episode_date: date) -> Path:
+    return output_dir / f"美股財經Podcast_{episode_date:%Y%m%d}_cache.json"
+
+
+def _write_episode_cache(
+    cache_path: Path,
+    transcript_sections: list[str],
+    summary: str,
+    spotify_description: str,
+    cited_source_ids: set[str],
+    all_sources: list[SourceItem],
+    episode_number: int,
+) -> None:
+    payload = {
+        "version": 1,
+        "transcript_sections": transcript_sections,
+        "summary": summary,
+        "spotify_description": spotify_description,
+        "cited_source_ids": sorted(cited_source_ids),
+        "all_sources": [asdict(source) for source in all_sources],
+        "episode_number": episode_number,
+    }
+    temporary_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=cache_path.parent,
+            prefix=f".{cache_path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as cache_file:
+            temporary_path = Path(cache_file.name)
+            json.dump(payload, cache_file, ensure_ascii=False)
+            cache_file.write("\n")
+        temporary_path.replace(cache_path)
+    finally:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
+
+
+def _load_episode_cache(
+    cache_path: Path,
+) -> tuple[list[str], str, str, set[str], list[SourceItem], int]:
+    try:
+        payload = json.loads(cache_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise RuntimeError(f"Unable to read episode cache {cache_path}.") from error
+
+    if not isinstance(payload, dict) or payload.get("version") != 1:
+        raise RuntimeError(f"Episode cache has an unsupported format: {cache_path}.")
+    transcript_sections = payload.get("transcript_sections")
+    summary = payload.get("summary")
+    spotify_description = payload.get("spotify_description")
+    cited_source_ids = payload.get("cited_source_ids")
+    cached_sources = payload.get("all_sources")
+    episode_number = payload.get("episode_number")
+    if (
+        not isinstance(transcript_sections, list)
+        or not transcript_sections
+        or not all(isinstance(section, str) for section in transcript_sections)
+        or not isinstance(summary, str)
+        or not isinstance(spotify_description, str)
+        or not isinstance(cited_source_ids, list)
+        or not all(isinstance(source_id, str) for source_id in cited_source_ids)
+        or not isinstance(cached_sources, list)
+        or not all(
+            isinstance(source, dict)
+            and set(source)
+            == {
+                "source_id",
+                "category",
+                "source_name",
+                "title",
+                "url",
+                "published",
+                "summary",
+            }
+            and all(isinstance(value, str) for value in source.values())
+            for source in cached_sources
+        )
+        or not isinstance(episode_number, int)
+        or isinstance(episode_number, bool)
+        or episode_number < 1
+    ):
+        raise RuntimeError(f"Episode cache is invalid: {cache_path}.")
+
+    return (
+        transcript_sections,
+        summary,
+        spotify_description,
+        set(cited_source_ids),
+        [SourceItem(**source) for source in cached_sources],
+        episode_number,
+    )
+
+
 def synthesize_section(client: Any, text: str) -> bytes:
     host_a_voice = os.getenv("GEMINI_TTS_HOST_A_VOICE", TTS_HOST_A_DEFAULT)
     host_b_voice = os.getenv("GEMINI_TTS_HOST_B_VOICE", TTS_HOST_B_DEFAULT)
@@ -498,39 +597,75 @@ def _create_client() -> Any:
 
 def create_episode(episode_date: date, output_dir: Path) -> Path:
     client = _create_client()
-    transcript_sections: list[str] = []
-    all_sources, source_issues = collect_sources(
-        sec_user_agent=os.getenv("SEC_USER_AGENT", ""),
-        twelve_data_api_key=os.getenv("TWELVE_DATA_API_KEY", ""),
-    )
-    for issue in source_issues:
-        logger.warning("%s", issue)
-    if not all_sources:
-        raise RuntimeError("No RSS or market-data sources were collected.")
-    cited_source_ids: set[str] = set()
-    recent_episode_context = load_recent_episode_context(output_dir, episode_date)
-
-    for section_number, (title, topic) in enumerate(EPISODE_SECTIONS, start=1):
-        logger.info("Generating script section %d/%d: %s", section_number, len(EPISODE_SECTIONS), title)
-        section_sources = select_sources(section_number, all_sources)
-        text, sources = generate_script_section(
-            client,
-            episode_date,
-            section_number,
-            title,
-            topic,
-            section_sources,
-            recent_episode_context,
+    episode_name = f"美股財經Podcast_{episode_date:%Y%m%d}"
+    cache_path = _episode_cache_path(output_dir, episode_date)
+    if cache_path.exists():
+        (
+            transcript_sections,
+            summary,
+            spotify_description,
+            cited_source_ids,
+            all_sources,
+            episode_number,
+        ) = _load_episode_cache(cache_path)
+        logger.info("Loaded cached episode script: %s", cache_path)
+    else:
+        transcript_sections = []
+        all_sources, source_issues = collect_sources(
+            sec_user_agent=os.getenv("SEC_USER_AGENT", ""),
+            twelve_data_api_key=os.getenv("TWELVE_DATA_API_KEY", ""),
         )
-        transcript_sections.append(text)
-        cited_source_ids.update(sources)
+        for issue in source_issues:
+            logger.warning("%s", issue)
+        if not all_sources:
+            raise RuntimeError("No RSS or market-data sources were collected.")
+        cited_source_ids = set()
+        recent_episode_context = load_recent_episode_context(output_dir, episode_date)
 
-    summary = generate_episode_summary(client, transcript_sections)
-    spotify_description = generate_spotify_description(client, transcript_sections)
-    episode_number = next_episode_number(output_dir)
+        for section_number, (title, topic) in enumerate(EPISODE_SECTIONS, start=1):
+            logger.info(
+                "Generating script section %d/%d: %s",
+                section_number,
+                len(EPISODE_SECTIONS),
+                title,
+            )
+            section_sources = select_sources(section_number, all_sources)
+            text, sources = generate_script_section(
+                client,
+                episode_date,
+                section_number,
+                title,
+                topic,
+                section_sources,
+                recent_episode_context,
+            )
+            transcript_sections.append(text)
+            cited_source_ids.update(sources)
+
+        summary = generate_episode_summary(client, transcript_sections)
+        spotify_description = generate_spotify_description(client, transcript_sections)
+        episode_number = next_episode_number(output_dir)
     mp3_path = build_episode_mp3_path(output_dir, episode_number, summary)
     if mp3_path.exists():
         raise FileExistsError(f"Episode MP3 already exists: {mp3_path}")
+    if not cache_path.exists():
+        _write_episode_cache(
+            cache_path,
+            transcript_sections,
+            summary,
+            spotify_description,
+            cited_source_ids,
+            all_sources,
+            episode_number,
+        )
+
+    transcript_path = output_dir / f"{episode_name}.txt"
+    transcript_path.write_text(
+        f"美股財經 Podcast｜{episode_date.isoformat()}（台灣時間）\n\n"
+        + "\n\n".join(transcript_sections)
+        + "\n",
+        encoding="utf-8",
+    )
 
     audio_chunks: list[bytes] = []
     for section_number, text in enumerate(transcript_sections, start=1):
@@ -567,16 +702,8 @@ def create_episode(episode_date: date, output_dir: Path) -> Path:
         )
         audio_chunks.append(audio)
 
-    episode_name = f"美股財經Podcast_{episode_date:%Y%m%d}"
     duration = convert_wav_chunks_to_mp3(audio_chunks, mp3_path)
 
-    transcript_path = output_dir / f"{episode_name}.txt"
-    transcript_path.write_text(
-        f"美股財經 Podcast｜{episode_date.isoformat()}（台灣時間）\n\n"
-        + "\n\n".join(transcript_sections)
-        + "\n",
-        encoding="utf-8",
-    )
     spotify_description_path = (
         output_dir / f"美股盤後EP{episode_number}｜{summary}_Spotify說明.txt"
     )
@@ -607,6 +734,7 @@ def create_episode(episode_date: date, output_dir: Path) -> Path:
         duration / 60,
         len(cited_sources),
     )
+    cache_path.unlink()
     return mp3_path
 
 

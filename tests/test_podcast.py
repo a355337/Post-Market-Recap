@@ -18,6 +18,7 @@ from podcast import (
     _generate_content,
     _run_with_progress_logging,
     build_episode_mp3_path,
+    create_episode,
     generate_script_section,
     generate_episode_summary,
     generate_spotify_description,
@@ -410,6 +411,69 @@ class ScriptGenerationTests(unittest.TestCase):
             )
 
         self.assertEqual(client.models.generate_content.call_count, 2)
+
+
+class EpisodeCacheTests(unittest.TestCase):
+    def test_reuses_cached_script_after_tts_failure(self) -> None:
+        episode_date = date(2026, 11, 23)
+        source = SourceItem(
+            source_id="S01",
+            category="news",
+            source_name="Example News",
+            title="Market update",
+            url="https://example.com/market",
+            published="2026-11-23",
+            summary="Markets moved.",
+        )
+
+        def create_mp3(_audio_chunks: list[bytes], output_path: Path) -> float:
+            output_path.write_bytes(b"mp3")
+            return 60.0
+
+        with TemporaryDirectory() as directory:
+            output_dir = Path(directory)
+            with (
+                patch("podcast._create_client", return_value=Mock()),
+                patch(
+                    "podcast.EPISODE_SECTIONS",
+                    (("開場", "市場概況"),),
+                ),
+                patch(
+                    "podcast.collect_sources",
+                    return_value=([source], []),
+                ) as collect_sources,
+                patch("podcast.select_sources", return_value=[source]),
+                patch(
+                    "podcast.generate_script_section",
+                    return_value=("主持人甲：市場走勢。[S01]", {"S01"}),
+                ) as generate_script,
+                patch("podcast.generate_episode_summary", return_value="市場"),
+                patch("podcast.generate_spotify_description", return_value="市場說明"),
+                patch(
+                    "podcast.synthesize_section",
+                    side_effect=[RuntimeError("TTS failed"), b"audio"],
+                ),
+                patch("podcast.convert_wav_chunks_to_mp3", side_effect=create_mp3),
+            ):
+                with self.assertLogs("market_podcast", level="ERROR"):
+                    with self.assertRaisesRegex(RuntimeError, "TTS failed"):
+                        create_episode(episode_date, output_dir)
+
+                cache_path = output_dir / "美股財經Podcast_20261123_cache.json"
+                self.assertTrue(cache_path.is_file())
+                transcript_path = output_dir / "美股財經Podcast_20261123.txt"
+                self.assertIn(
+                    "主持人甲：市場走勢。[S01]",
+                    transcript_path.read_text(encoding="utf-8"),
+                )
+
+                mp3_path = create_episode(episode_date, output_dir)
+
+            collect_sources.assert_called_once()
+            generate_script.assert_called_once()
+            self.assertTrue(mp3_path.is_file())
+            self.assertFalse(cache_path.exists())
+            self.assertTrue(transcript_path.is_file())
 
 
 class PodcastSynthesisTests(unittest.TestCase):

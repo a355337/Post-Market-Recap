@@ -80,6 +80,8 @@ Unregister-ScheduledTask -TaskName TaiwanMarketPodcast -Confirm:$false
 
 撰稿時會把輸出資料夾中最近三集逐字稿（每集最多 2,500 字元）附在提示中，協助延續敘事並避免重複。前集內容僅作脈絡參考，不能作為新聞事實或行情數字的依據；所有事實仍須由本段最新來源支持。
 
+逐字稿會在開始 TTS 前寫入 `.txt` 並保留，摘要、來源與逐字稿也會暫存為當日快取；若 TTS 失敗，重新執行會沿用快取，不必重新收集來源或生成逐字稿。整集成功後會刪除快取檔，但不會刪除逐字稿。
+
 預設文字模型為 `gemini-4-hydrogen`，語音模型為 `gemini-3.8-flash-tts`。寫稿會產生「主持人甲／主持人乙」輪流對話格式；配音會啟用 TTS Multi-speaker，兩位主持人分別綁定固定 Voice ID（預設主持人甲 `Kore`、主持人乙 `Puck`）。可在 `.env` 覆寫 `GEMINI_TEXT_MODEL`、`GEMINI_TTS_MODEL`、`GEMINI_TTS_HOST_A_VOICE` 與 `GEMINI_TTS_HOST_B_VOICE`。若要啟用 SEC，設定 `SEC_USER_AGENT` 並填入可聯絡的真實 email；若要行情代理報價，設定 [Twelve Data API key](https://twelvedata.com/)，每集會查詢 SPY、QQQ、DIA 三個 ETF。RSS 失敗會記錄警告；所有來源都無法取得時，程式會停止而不讓 Gemini 補猜資料。腳本會記錄實際音訊長度；播讀速度與 Gemini 生成內容會使每集長度略有差異。
 
 Gemini API 遇到 HTTP 429（速率限制）或 503（服務暫時無法使用）時，SDK 會最多嘗試 5 次（含首次請求），以指數退避加隨機抖動等待後重送，退避上限為 60 秒；其他錯誤直接回報。若重試仍失敗，手動 `--once` 會報錯結束；常駐排程會記錄錯誤，並於下一個工作日早上 06:00 再試。
