@@ -221,10 +221,28 @@ def generate_script_section(
     if not isinstance(text, str) or not text.strip():
         raise RuntimeError(f"Gemini did not return text for section {section_number}.")
     cited_source_ids = set(re.findall(r"\[(S\d+)\]", text))
-    if not cited_source_ids:
+    invalid_source_ids = cited_source_ids - source_ids
+    if not cited_source_ids or invalid_source_ids:
+        if invalid_source_ids:
+            citation_issue = (
+                "上一版草稿引用了不存在的來源 ID："
+                + ", ".join(f"[{source_id}]" for source_id in sorted(invalid_source_ids))
+                + "。"
+            )
+            logger.warning(
+                "Gemini script section %d cited unknown source IDs (%s); requesting one revision.",
+                section_number,
+                ", ".join(sorted(invalid_source_ids)),
+            )
+        else:
+            citation_issue = "上一版草稿沒有任何來源標記。"
+            logger.warning(
+                "Gemini script section %d has no citations; requesting one revision.",
+                section_number,
+            )
         retry_prompt = f"""{prompt}
 
-上一版草稿沒有任何來源標記，請重新撰寫本段並修正。每項事實至少附上一個可用的來源標記，例如 [S01]；只能使用本提示列出的來源 ID，且標記必須支持對應事實。若資料不支持某項事實，請刪除該事實，不可猜測或補造。只輸出修正後正文。
+{citation_issue}請重新撰寫本段並修正。每項事實至少附上一個可用的來源標記，例如 [S01]；只能使用本提示列出的來源 ID，且標記必須支持對應事實。若資料不支持某項事實，請刪除該事實，不可猜測或補造。只輸出修正後正文。
 
 上一版草稿：
 {text}"""

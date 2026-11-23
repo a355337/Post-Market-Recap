@@ -351,11 +351,44 @@ class ScriptGenerationTests(unittest.TestCase):
 
         self.assertEqual(client.models.generate_content.call_count, 2)
 
+    def test_retries_once_when_response_cites_unknown_source(self) -> None:
+        client = Mock()
+        client.models.generate_content.side_effect = [
+            SimpleNamespace(text="市場消息摘要。[S17]"),
+            SimpleNamespace(text="市場消息摘要。[S01]"),
+        ]
+        source = SourceItem(
+            source_id="S01",
+            category="news",
+            source_name="Example News",
+            title="Market update",
+            url="https://example.com/market",
+            published="2026-11-20",
+            summary="Markets moved.",
+        )
+
+        text, cited_sources = generate_script_section(
+            client,
+            date(2026, 11, 20),
+            3,
+            "市場",
+            "市場消息",
+            [source],
+        )
+
+        self.assertEqual(text, "市場消息摘要。[S01]")
+        self.assertEqual(cited_sources, {"S01"})
+        self.assertEqual(client.models.generate_content.call_count, 2)
+        retry_prompt = client.models.generate_content.call_args.kwargs["contents"]
+        self.assertIn("[S17]", retry_prompt)
+        self.assertIn("只能使用本提示列出的來源 ID", retry_prompt)
+
     def test_rejects_unknown_source_marker(self) -> None:
         client = Mock()
-        client.models.generate_content.return_value = SimpleNamespace(
-            text="未確認消息。[S99]"
-        )
+        client.models.generate_content.side_effect = [
+            SimpleNamespace(text="未確認消息。[S99]"),
+            SimpleNamespace(text="修訂後仍引用無效來源。[S98]"),
+        ]
         source = SourceItem(
             source_id="S01",
             category="news",
@@ -375,6 +408,8 @@ class ScriptGenerationTests(unittest.TestCase):
                 "市場",
                 [source],
             )
+
+        self.assertEqual(client.models.generate_content.call_count, 2)
 
 
 class PodcastSynthesisTests(unittest.TestCase):
