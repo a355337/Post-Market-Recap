@@ -490,7 +490,7 @@ def _create_client() -> Any:
                 "max_delay": GEMINI_RETRY_MAX_DELAY,
                 "exp_base": 2.0,
                 "jitter": 1.0,
-                "http_status_codes": [429],
+                "http_status_codes": [429, 503],
             },
         },
     )

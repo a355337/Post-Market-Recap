@@ -82,7 +82,7 @@ class GeminiClientTests(unittest.TestCase):
             )
         )
 
-    def test_configures_bounded_exponential_retries_for_rate_limits(self) -> None:
+    def test_configures_bounded_exponential_retries_for_retryable_errors(self) -> None:
         with (
             patch.dict("os.environ", {"GEMINI_API_KEY": "test-key"}),
             patch("podcast.genai.Client") as client_factory,
@@ -99,7 +99,7 @@ class GeminiClientTests(unittest.TestCase):
                     "max_delay": 60.0,
                     "exp_base": 2.0,
                     "jitter": 1.0,
-                    "http_status_codes": [429],
+                    "http_status_codes": [429, 503],
                 },
             },
         )
