@@ -40,21 +40,11 @@ Copy-Item .env.example .env
 
 依序測試幾個 Gemini 3+ 模型並檢查 grounding 引用。遇到 429 配額錯誤會預設停止，避免重複送出搜尋請求；若仍要繼續測其他模型，可加 `--continue-on-quota`，但可能產生額外費用。
 
-## 獨立上傳至 Spotify for Creators
+## Spotify for Creators 上傳（暫停）
 
-上傳工具目前獨立於 `podcast.py`。第一次使用時，透過不回顯密碼的提示將 Spotify 密碼存入 Windows keyring：
+目前暫時不上傳 EP2，也不將獨立上傳工具整合至 `podcast.py`。請勿執行 `spotify_uploader.py`；待登入與驗證流程確認可用後，再恢復上傳測試。工具仍保留，密碼使用 Windows keyring，預設使用 Chrome。
 
-```powershell
-.\.venv\Scripts\python.exe -c "import getpass,keyring; keyring.set_password('spotify','a355337@gmail.com',getpass.getpass('Spotify password: '))"
-```
-
-預設優先使用已安裝的 Chrome；也可改用 Playwright Chromium（Ubuntu/CI 可先執行 `python -m playwright install chromium`，並帶上 `--browser chromium`）。若出現額外驗證，請在瀏覽器完成。登入後選擇正確節目並開啟 **New episode** 上傳表單。工具會上傳 MP3，並從同名 `_Spotify說明.txt` 讀取標題與說明；完成後請檢查頁面，再以右上角 **X** 儲存為草稿。工具會等待草稿畫面以確認完成，不會發布節目，也不會修改主程式。
-
-```powershell
-.\.venv\Scripts\python.exe spotify_uploader.py "output\美股盤後EP2｜美股科技走勢修正.mp3"
-```
-
-GitHub Actions 的無人值守流程需另行處理認證與人工驗證：Windows keyring 不會隨工作移至 Ubuntu runner；之後應使用 GitHub Actions Secrets 並確認 Spotify 登入驗證是否允許自動化。本工具目前仍需在瀏覽器完成人工驗證、選節目及檢查草稿，尚不能直接放進無人值守工作流程。
+若日後恢復上傳，GitHub Actions 還需另行處理認證與人工驗證：Windows keyring 不會隨工作移至 Ubuntu runner，且目前流程需要在瀏覽器完成驗證、選擇節目並檢查草稿，尚不能直接用於無人值守工作流程。
 
 ## 立即測試
 
