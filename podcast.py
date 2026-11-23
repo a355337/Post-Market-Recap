@@ -353,8 +353,15 @@ def build_episode_mp3_path(
 def synthesize_section(client: Any, text: str) -> bytes:
     host_a_voice = os.getenv("GEMINI_TTS_HOST_A_VOICE", TTS_HOST_A_DEFAULT)
     host_b_voice = os.getenv("GEMINI_TTS_HOST_B_VOICE", TTS_HOST_B_DEFAULT)
+    tts_model = os.getenv("GEMINI_TTS_MODEL", TTS_MODEL_DEFAULT)
+    logger.info(
+        "TTS request starting: model=%s, host_a_voice=%s, host_b_voice=%s",
+        tts_model,
+        host_a_voice,
+        host_b_voice,
+    )
     response = client.interactions.create(
-        model=os.getenv("GEMINI_TTS_MODEL", TTS_MODEL_DEFAULT),
+        model=tts_model,
         input=[
             {
                 "type": "user_input",

@@ -419,12 +419,22 @@ class PodcastSynthesisTests(unittest.TestCase):
             output_audio=SimpleNamespace(data=base64.b64encode(b"audio").decode())
         )
 
-        result = synthesize_section(
-            client,
-            "主持人甲：市場今天震盪。\n主持人乙：我們接著看原因。",
-        )
+        with self.assertLogs("market_podcast", level="INFO") as captured:
+            result = synthesize_section(
+                client,
+                "主持人甲：市場今天震盪。\n主持人乙：我們接著看原因。",
+            )
 
         self.assertEqual(result, b"audio")
+        self.assertTrue(
+            any(
+                "TTS request starting: model=gemini-3.8-flash-tts"
+                in line
+                and "host_a_voice=Kore" in line
+                and "host_b_voice=Puck" in line
+                for line in captured.output
+            )
+        )
         call = client.interactions.create.call_args.kwargs
         self.assertEqual(call["model"], "gemini-3.8-flash-tts")
         speech_config = call["generation_config"]["speech_config"]
@@ -436,6 +446,39 @@ class PodcastSynthesisTests(unittest.TestCase):
         self.assertEqual(
             [item["voice_config"]["prebuilt_voice_config"]["voice_name"] for item in speaker_configs],
             ["Kore", "Puck"],
+        )
+
+    def test_logs_environment_overrides_before_tts_request(self) -> None:
+        client = Mock()
+        client.interactions.create.return_value = SimpleNamespace(
+            output_audio=SimpleNamespace(data=base64.b64encode(b"audio").decode())
+        )
+
+        with (
+            patch.dict(
+                "os.environ",
+                {
+                    "GEMINI_TTS_MODEL": "gemini-test-tts",
+                    "GEMINI_TTS_HOST_A_VOICE": "Zephyr",
+                    "GEMINI_TTS_HOST_B_VOICE": "Charon",
+                },
+            ),
+            self.assertLogs("market_podcast", level="INFO") as captured,
+        ):
+            synthesize_section(client, "主持人甲：測試。\n主持人乙：確認。")
+
+        self.assertTrue(
+            any(
+                "TTS request starting: model=gemini-test-tts"
+                in line
+                and "host_a_voice=Zephyr" in line
+                and "host_b_voice=Charon" in line
+                for line in captured.output
+            )
+        )
+        self.assertEqual(
+            client.interactions.create.call_args.kwargs["model"],
+            "gemini-test-tts",
         )
 
 
