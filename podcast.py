@@ -173,11 +173,24 @@ def generate_spotify_description(client: Any, sections: list[str]) -> str:
     if not isinstance(text, str) or not text.strip():
         raise RuntimeError("Gemini did not return a Spotify description.")
     description = text.strip().strip("「」『』《》〈〉“”\"'`").strip()
-    if not description or len(description) > 100:
+    if not description:
         raise RuntimeError(
             "Gemini Spotify description must contain 1-100 characters; "
-            f"received {len(description)}."
+            "received 0."
         )
+    if len(description) > 100:
+        logger.warning(
+            "Gemini Spotify description exceeded 100 characters (%d); trimming output.",
+            len(description),
+        )
+        within_limit = description[:100]
+        sentence_end = max(
+            within_limit.rfind(mark) for mark in ("。", "！", "？", "!", "?")
+        )
+        if sentence_end >= 40:
+            description = within_limit[: sentence_end + 1].rstrip()
+        else:
+            description = description[:99].rstrip("，、；：,;: ") + "…"
     return description
 
 

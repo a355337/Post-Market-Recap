@@ -184,14 +184,28 @@ class EpisodeNamingTests(unittest.TestCase):
         self.assertEqual(result, description)
         self.assertLessEqual(len(result), 100)
 
-    def test_spotify_description_over_100_characters_is_rejected(self) -> None:
+    def test_spotify_description_over_100_characters_is_trimmed(self) -> None:
         client = Mock()
         client.models.generate_content.return_value = SimpleNamespace(
-            text="美股市場焦點" * 17
+            text="美股市場焦點" * 20
         )
 
-        with self.assertRaisesRegex(RuntimeError, "1-100 characters"):
-            generate_spotify_description(client, ["逐字稿內容"])
+        result = generate_spotify_description(client, ["逐字稿內容"])
+
+        self.assertEqual(len(result), 100)
+        self.assertTrue(result.endswith("…"))
+
+    def test_spotify_description_trims_at_a_sentence_boundary_when_possible(self) -> None:
+        sentence = "本集聚焦科技股與市場走勢" * 4 + "。"
+        client = Mock()
+        client.models.generate_content.return_value = SimpleNamespace(
+            text=sentence + "這是多餘的延伸內容" * 15 + "。"
+        )
+
+        result = generate_spotify_description(client, ["逐字稿內容"])
+
+        self.assertEqual(result, sentence)
+        self.assertLessEqual(len(result), 100)
 
     def test_episode_number_increments_from_existing_mp3s(self) -> None:
         with TemporaryDirectory() as directory:
