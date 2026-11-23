@@ -14,6 +14,7 @@ from news_sources import SourceItem
 from podcast import (
     TAIPEI,
     _create_client,
+    _generate_content,
     build_episode_mp3_path,
     generate_script_section,
     generate_episode_summary,
@@ -27,6 +28,42 @@ from podcast import (
 
 
 class GeminiClientTests(unittest.TestCase):
+    def test_logs_gemini_request_start_and_completion(self) -> None:
+        client = Mock()
+        client.models.generate_content.return_value = SimpleNamespace(text="ok")
+
+        with self.assertLogs("market_podcast", level="INFO") as captured:
+            response = _generate_content(client, "script section 6", "prompt")
+
+        self.assertEqual(response.text, "ok")
+        self.assertTrue(
+            any(
+                "Gemini request started: script section 6" in line
+                for line in captured.output
+            )
+        )
+        self.assertTrue(
+            any(
+                "Gemini request completed: script section 6" in line
+                for line in captured.output
+            )
+        )
+
+    def test_logs_traceback_when_gemini_request_is_interrupted(self) -> None:
+        client = Mock()
+        client.models.generate_content.side_effect = KeyboardInterrupt
+
+        with self.assertLogs("market_podcast", level="ERROR") as captured:
+            with self.assertRaises(KeyboardInterrupt):
+                _generate_content(client, "script section 6", "prompt")
+
+        self.assertTrue(
+            any(
+                "Gemini request interrupted: script section 6" in line
+                for line in captured.output
+            )
+        )
+
     def test_configures_bounded_exponential_retries_for_rate_limits(self) -> None:
         with (
             patch.dict("os.environ", {"GEMINI_API_KEY": "test-key"}),

@@ -54,6 +54,34 @@ EPISODE_SECTIONS = (
 logger = logging.getLogger("market_podcast")
 
 
+def _generate_content(client: Any, operation: str, prompt: str) -> Any:
+    model = os.getenv("GEMINI_TEXT_MODEL", TEXT_MODEL_DEFAULT)
+    started_at = time.monotonic()
+    logger.info("Gemini request started: %s (model=%s)", operation, model)
+    try:
+        response = client.models.generate_content(model=model, contents=prompt)
+    except KeyboardInterrupt:
+        logger.exception(
+            "Gemini request interrupted: %s after %.1f seconds",
+            operation,
+            time.monotonic() - started_at,
+        )
+        raise
+    except Exception:
+        logger.exception(
+            "Gemini request failed: %s after %.1f seconds",
+            operation,
+            time.monotonic() - started_at,
+        )
+        raise
+    logger.info(
+        "Gemini request completed: %s in %.1f seconds",
+        operation,
+        time.monotonic() - started_at,
+    )
+    return response
+
+
 def is_taiwan_workday(day: date) -> bool:
     if day.weekday() >= 5:
         return False
@@ -159,9 +187,8 @@ def generate_script_section(
 可用來源資料：
 {source_material}"""
 
-    response = client.models.generate_content(
-        model=os.getenv("GEMINI_TEXT_MODEL", TEXT_MODEL_DEFAULT),
-        contents=prompt,
+    response = _generate_content(
+        client, f"script section {section_number}", prompt
     )
     text = getattr(response, "text", None)
     if not isinstance(text, str) or not text.strip():
@@ -174,9 +201,10 @@ def generate_script_section(
 
 上一版草稿：
 {text}"""
-        response = client.models.generate_content(
-            model=os.getenv("GEMINI_TEXT_MODEL", TEXT_MODEL_DEFAULT),
-            contents=retry_prompt,
+        response = _generate_content(
+            client,
+            f"script section {section_number} citation repair",
+            retry_prompt,
         )
         text = getattr(response, "text", None)
         if not isinstance(text, str) or not text.strip():
@@ -205,10 +233,7 @@ def generate_episode_summary(client: Any, sections: list[str]) -> str:
 
 逐字稿：
 {chr(10).join(sections)}"""
-    response = client.models.generate_content(
-        model=os.getenv("GEMINI_TEXT_MODEL", TEXT_MODEL_DEFAULT),
-        contents=prompt,
-    )
+    response = _generate_content(client, "episode summary", prompt)
     text = getattr(response, "text", None)
     if not isinstance(text, str) or not text.strip():
         raise RuntimeError("Gemini did not return an episode summary.")
@@ -229,10 +254,7 @@ def generate_spotify_description(client: Any, sections: list[str]) -> str:
 
 逐字稿：
 {chr(10).join(sections)}"""
-    response = client.models.generate_content(
-        model=os.getenv("GEMINI_TEXT_MODEL", TEXT_MODEL_DEFAULT),
-        contents=prompt,
-    )
+    response = _generate_content(client, "Spotify description", prompt)
     text = getattr(response, "text", None)
     if not isinstance(text, str) or not text.strip():
         raise RuntimeError("Gemini did not return a Spotify description.")
