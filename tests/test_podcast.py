@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import unittest
 from datetime import date, datetime, time, timedelta
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 from unittest.mock import Mock
 
@@ -10,8 +12,12 @@ import holidays
 from news_sources import SourceItem
 from podcast import (
     TAIPEI,
+    build_episode_mp3_path,
     generate_script_section,
+    generate_episode_summary,
+    generate_spotify_description,
     is_taiwan_workday,
+    next_episode_number,
     next_run_at_or_after,
 )
 
@@ -109,6 +115,63 @@ class ScriptGenerationTests(unittest.TestCase):
                 "市場",
                 [source],
             )
+
+
+class EpisodeNamingTests(unittest.TestCase):
+    def test_summary_is_trimmed_and_limited_to_eight_characters(self) -> None:
+        client = Mock()
+        client.models.generate_content.return_value = SimpleNamespace(
+            text="「科技股震盪」\n"
+        )
+
+        summary = generate_episode_summary(client, ["逐字稿內容"])
+
+        self.assertEqual(summary, "科技股震盪")
+
+    def test_summary_longer_than_eight_characters_is_rejected(self) -> None:
+        client = Mock()
+        client.models.generate_content.return_value = SimpleNamespace(
+            text="科技股震盪市場觀望"
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "1-8 characters"):
+            generate_episode_summary(client, ["逐字稿內容"])
+
+    def test_spotify_description_is_trimmed_and_limited_to_100_characters(self) -> None:
+        description = "本集聚焦科技股走勢與聯準會利率政策。" * 2
+        client = Mock()
+        client.models.generate_content.return_value = SimpleNamespace(
+            text=f"「{description}」\n"
+        )
+
+        result = generate_spotify_description(client, ["逐字稿內容"])
+
+        self.assertEqual(result, description)
+        self.assertLessEqual(len(result), 100)
+
+    def test_spotify_description_over_100_characters_is_rejected(self) -> None:
+        client = Mock()
+        client.models.generate_content.return_value = SimpleNamespace(
+            text="美股市場焦點" * 17
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "1-100 characters"):
+            generate_spotify_description(client, ["逐字稿內容"])
+
+    def test_episode_number_increments_from_existing_mp3s(self) -> None:
+        with TemporaryDirectory() as directory:
+            output_dir = Path(directory)
+            (output_dir / "美股盤後EP2｜科技股震盪.mp3").touch()
+            (output_dir / "美股盤後EP7｜利率觀望.mp3").touch()
+            (output_dir / "美股財經Podcast_20261120.mp3").touch()
+
+            self.assertEqual(next_episode_number(output_dir), 8)
+
+    def test_mp3_path_uses_windows_safe_fullwidth_separator(self) -> None:
+        path = build_episode_mp3_path(Path("output"), 3, "科技股震盪")
+
+        self.assertEqual(path.name, "美股盤後EP3｜科技股震盪.mp3")
+        self.assertNotIn("|", path.name)
 
 
 if __name__ == "__main__":

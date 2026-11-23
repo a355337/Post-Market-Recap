@@ -116,6 +116,75 @@ def generate_script_section(
     return text.strip(), cited_source_ids
 
 
+def generate_episode_summary(client: Any, sections: list[str]) -> str:
+    prompt = f"""請根據以下美股盤後 podcast 逐字稿，產生一個繁體中文標題摘要。
+標題必須是 1 至 8 個中文字，不可加標點、引號、空白、EP 編號或說明。
+只輸出標題；不可加入逐字稿沒有的資訊。
+
+逐字稿：
+{chr(10).join(sections)}"""
+    response = client.models.generate_content(
+        model=os.getenv("GEMINI_TEXT_MODEL", "gemini-3.5-flash-lite"),
+        contents=prompt,
+    )
+    text = getattr(response, "text", None)
+    if not isinstance(text, str) or not text.strip():
+        raise RuntimeError("Gemini did not return an episode summary.")
+    summary = re.sub(r"[\s「」『』《》〈〉“”\"'`。，、；：！？.!?,;:：]+", "", text)
+    if not summary or len(summary) > 8:
+        raise RuntimeError(
+            f"Gemini episode summary must be 1-8 characters; received {len(summary)}."
+        )
+    if re.search(r'[<>:"/\\|?*\x00-\x1f]', summary):
+        raise RuntimeError("Gemini episode summary contains invalid filename characters.")
+    return summary
+
+
+def generate_spotify_description(client: Any, sections: list[str]) -> str:
+    prompt = f"""請根據以下美股盤後 podcast 逐字稿，撰寫一段適合 Spotify 節目說明的繁體中文摘要。
+摘要最多 100 個中文字，簡潔說明本集涵蓋的市場焦點。只根據逐字稿，不可添加新事實。
+只輸出摘要正文，不要標題、引號、條列或 Markdown。
+
+逐字稿：
+{chr(10).join(sections)}"""
+    response = client.models.generate_content(
+        model=os.getenv("GEMINI_TEXT_MODEL", "gemini-3.5-flash-lite"),
+        contents=prompt,
+    )
+    text = getattr(response, "text", None)
+    if not isinstance(text, str) or not text.strip():
+        raise RuntimeError("Gemini did not return a Spotify description.")
+    description = text.strip().strip("「」『』《》〈〉“”\"'`").strip()
+    if not description or len(description) > 100:
+        raise RuntimeError(
+            "Gemini Spotify description must contain 1-100 characters; "
+            f"received {len(description)}."
+        )
+    return description
+
+
+def next_episode_number(output_dir: Path) -> int:
+    pattern = re.compile(r"^美股盤後EP(\d+)｜.*\.mp3$", re.IGNORECASE)
+    episode_numbers = [
+        int(match.group(1))
+        for path in output_dir.glob("美股盤後EP*｜*.mp3")
+        if (match := pattern.match(path.name))
+    ]
+    return max(episode_numbers, default=0) + 1
+
+
+def build_episode_mp3_path(
+    output_dir: Path, episode_number: int, summary: str
+) -> Path:
+    if episode_number < 1:
+        raise ValueError("episode_number must be positive.")
+    if not summary or len(summary) > 8:
+        raise ValueError("summary must contain between 1 and 8 characters.")
+    if re.search(r'[<>:"/\\|?*\x00-\x1f]', summary):
+        raise ValueError("summary contains invalid filename characters.")
+    return output_dir / f"美股盤後EP{episode_number}｜{summary}.mp3"
+
+
 def synthesize_section(client: Any, text: str) -> bytes:
     response = client.interactions.create(
         model=os.getenv("GEMINI_TTS_MODEL", "gemini-3.8-flash-lite-tts"),
@@ -235,7 +304,6 @@ def _create_client() -> Any:
 def create_episode(episode_date: date, output_dir: Path) -> Path:
     client = _create_client()
     transcript_sections: list[str] = []
-    audio_chunks: list[bytes] = []
     all_sources, source_issues = collect_sources(
         sec_user_agent=os.getenv("SEC_USER_AGENT", ""),
         twelve_data_api_key=os.getenv("TWELVE_DATA_API_KEY", ""),
@@ -255,12 +323,20 @@ def create_episode(episode_date: date, output_dir: Path) -> Path:
         transcript_sections.append(text)
         cited_source_ids.update(sources)
 
+    summary = generate_episode_summary(client, transcript_sections)
+    spotify_description = generate_spotify_description(client, transcript_sections)
+    episode_number = next_episode_number(output_dir)
+    mp3_path = build_episode_mp3_path(output_dir, episode_number, summary)
+    if mp3_path.exists():
+        raise FileExistsError(f"Episode MP3 already exists: {mp3_path}")
+
+    audio_chunks: list[bytes] = []
+    for section_number, text in enumerate(transcript_sections, start=1):
         logger.info("Synthesizing section %d/%d", section_number, len(EPISODE_SECTIONS))
         audio_text = re.sub(r"\s*\[S\d+\]", "", text)
         audio_chunks.append(synthesize_section(client, audio_text))
 
     episode_name = f"美股財經Podcast_{episode_date:%Y%m%d}"
-    mp3_path = output_dir / f"{episode_name}.mp3"
     duration = convert_wav_chunks_to_mp3(audio_chunks, mp3_path)
 
     transcript_path = output_dir / f"{episode_name}.txt"
@@ -270,6 +346,10 @@ def create_episode(episode_date: date, output_dir: Path) -> Path:
         + "\n",
         encoding="utf-8",
     )
+    spotify_description_path = (
+        output_dir / f"美股盤後EP{episode_number}｜{summary}_Spotify說明.txt"
+    )
+    spotify_description_path.write_text(spotify_description + "\n", encoding="utf-8")
     sources_path = output_dir / f"{episode_name}_sources.txt"
     cited_sources = [
         source for source in all_sources if source.source_id in cited_source_ids
@@ -288,8 +368,11 @@ def create_episode(episode_date: date, output_dir: Path) -> Path:
         encoding="utf-8",
     )
     logger.info(
-        "Created %s (audio duration %.1f minutes; %d sources)",
+        "Created %s (EP%d, summary=%s, Spotify description=%s, audio duration %.1f minutes; %d sources)",
         mp3_path,
+        episode_number,
+        summary,
+        spotify_description_path,
         duration / 60,
         len(cited_sources),
     )

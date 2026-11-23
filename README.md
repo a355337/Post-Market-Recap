@@ -70,7 +70,7 @@ Unregister-ScheduledTask -TaskName TaiwanMarketPodcast -Confirm:$false
 
 ## 輸出與設定
 
-預設輸出在 `output/`：MP3、逐字稿、來源清單及執行記錄。程式從 CNBC、聯準會與 BLS RSS 收集資料，再交給 Gemini 文字模型撰稿，不使用 Google Search grounding。SEC 8-K feed 與 Twelve Data 行情可選擇設定；行情以 SPY、QQQ、DIA ETF 作為指數代理，並非指數本身的點位。未設定行情 API 時，節目不會猜測點位或漲跌幅。
+預設輸出在 `output/`：MP3、逐字稿、Spotify 說明、來源清單及執行記錄。MP3 會額外生成 8 個字內的本集摘要，檔名格式為 `美股盤後EP1｜摘要.mp3`，EP 編號依 `output/` 內既有集數遞增；另產生 100 字內的 Spotify 摘要，存成 `美股盤後EP1｜摘要_Spotify說明.txt`，可直接複製到 Spotify。因 Windows 檔名不能使用半形 `|`，實際使用外觀相近的全形 `｜`。程式從 CNBC、聯準會與 BLS RSS 收集資料，再交給 Gemini 文字模型撰稿，不使用 Google Search grounding。SEC 8-K feed 與 Twelve Data 行情可選擇設定；行情以 SPY、QQQ、DIA ETF 作為指數代理，並非指數本身的點位。未設定行情 API 時，節目不會猜測點位或漲跌幅。
 
 預設文字模型為 `gemini-3.5-flash-lite`，語音模型為 `gemini-3.8-flash-lite-tts`。可在 `.env` 覆寫 `GEMINI_TEXT_MODEL`、`GEMINI_TTS_MODEL` 與 `GEMINI_TTS_VOICE`。若要啟用 SEC，設定 `SEC_USER_AGENT` 並填入可聯絡的真實 email；若要行情代理報價，設定 [Twelve Data API key](https://twelvedata.com/)，每集會查詢 SPY、QQQ、DIA 三個 ETF。RSS 失敗會記錄警告；所有來源都無法取得時，程式會停止而不讓 Gemini 補猜資料。腳本會記錄實際音訊長度；播讀速度與 Gemini 生成內容會使每集長度略有差異。
 
