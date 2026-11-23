@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+import base64
 from datetime import date, datetime, time, timedelta
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -20,6 +21,7 @@ from podcast import (
     load_recent_episode_context,
     next_episode_number,
     next_run_at_or_after,
+    synthesize_section,
 )
 
 
@@ -61,6 +63,35 @@ class SchedulerTests(unittest.TestCase):
 
 
 class ScriptGenerationTests(unittest.TestCase):
+    def test_prompt_requests_two_host_dialogue_format(self) -> None:
+        client = Mock()
+        client.models.generate_content.return_value = SimpleNamespace(
+            text="主持人甲：市場回顧。[S01]\n主持人乙：接下來看利率。[S01]"
+        )
+        source = SourceItem(
+            source_id="S01",
+            category="news",
+            source_name="Example News",
+            title="Market update",
+            url="https://example.com/market",
+            published="2026-11-23",
+            summary="Markets moved.",
+        )
+
+        generate_script_section(
+            client,
+            date(2026, 11, 23),
+            1,
+            "開場",
+            "市場",
+            [source],
+        )
+
+        prompt = client.models.generate_content.call_args.kwargs["contents"]
+        self.assertIn("雙主持人對話格式", prompt)
+        self.assertIn("主持人甲：台詞", prompt)
+        self.assertIn("主持人乙：台詞", prompt)
+
     def test_recent_episode_context_is_included_as_nonfactual_context(self) -> None:
         client = Mock()
         client.models.generate_content.return_value = SimpleNamespace(
@@ -204,6 +235,33 @@ class ScriptGenerationTests(unittest.TestCase):
                 "市場",
                 [source],
             )
+
+
+class PodcastSynthesisTests(unittest.TestCase):
+    def test_uses_multi_speaker_config_and_fixed_host_voice_ids(self) -> None:
+        client = Mock()
+        client.interactions.create.return_value = SimpleNamespace(
+            output_audio=SimpleNamespace(data=base64.b64encode(b"audio").decode())
+        )
+
+        result = synthesize_section(
+            client,
+            "主持人甲：市場今天震盪。\n主持人乙：我們接著看原因。",
+        )
+
+        self.assertEqual(result, b"audio")
+        call = client.interactions.create.call_args.kwargs
+        self.assertEqual(call["model"], "gemini-3.8-flash-tts")
+        speech_config = call["generation_config"]["speech_config"]
+        speaker_configs = speech_config["multi_speaker_voice_config"]["speaker_voice_configs"]
+        self.assertEqual(
+            [item["speaker"] for item in speaker_configs],
+            ["主持人甲", "主持人乙"],
+        )
+        self.assertEqual(
+            [item["voice_config"]["prebuilt_voice_config"]["voice_name"] for item in speaker_configs],
+            ["Kore", "Puck"],
+        )
 
 
 class EpisodeNamingTests(unittest.TestCase):

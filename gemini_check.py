@@ -10,7 +10,7 @@ from google import genai
 from google.genai.errors import APIError
 
 BASE_DIR = Path(__file__).resolve().parent
-DEFAULT_MODEL = "gemini-3.5-flash-lite"  # X
+DEFAULT_MODEL = "gemini-4-hydrogen"  # X
 # DEFAULT_MODEL = "gemini-3.1-flash-lite"  # X
 # DEFAULT_MODEL = "gemini-2.5-flash-lite"  # X
 
