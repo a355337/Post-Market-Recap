@@ -35,6 +35,9 @@ TTS_HOST_A_DEFAULT = "Kore"
 TTS_HOST_B_DEFAULT = "Puck"
 TTS_HOST_A_LABEL = "主持人甲"
 TTS_HOST_B_LABEL = "主持人乙"
+GEMINI_RETRY_ATTEMPTS = 5
+GEMINI_RETRY_INITIAL_DELAY = 1.0
+GEMINI_RETRY_MAX_DELAY = 60.0
 EPISODE_SECTIONS = (
     ("開場與隔夜市場", "最新美股交易日、主要指數、整體市場情緒與重要變化。"),
     ("利率與總體經濟", "美國公債殖利率、通膨、就業與近期重要經濟數據。"),
@@ -384,7 +387,17 @@ def _create_client() -> Any:
         )
     return genai.Client(
         api_key=api_key,
-        http_options={"api_version": "v1beta"},
+        http_options={
+            "api_version": "v1beta",
+            "retry_options": {
+                "attempts": GEMINI_RETRY_ATTEMPTS,
+                "initial_delay": GEMINI_RETRY_INITIAL_DELAY,
+                "max_delay": GEMINI_RETRY_MAX_DELAY,
+                "exp_base": 2.0,
+                "jitter": 1.0,
+                "http_status_codes": [429],
+            },
+        },
     )
 
 

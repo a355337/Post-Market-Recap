@@ -1,18 +1,19 @@
 from __future__ import annotations
 
-import unittest
 import base64
+import unittest
 from datetime import date, datetime, time, timedelta
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 import holidays
 
 from news_sources import SourceItem
 from podcast import (
     TAIPEI,
+    _create_client,
     build_episode_mp3_path,
     generate_script_section,
     generate_episode_summary,
@@ -23,6 +24,30 @@ from podcast import (
     next_run_at_or_after,
     synthesize_section,
 )
+
+
+class GeminiClientTests(unittest.TestCase):
+    def test_configures_bounded_exponential_retries_for_rate_limits(self) -> None:
+        with (
+            patch.dict("os.environ", {"GEMINI_API_KEY": "test-key"}),
+            patch("podcast.genai.Client") as client_factory,
+        ):
+            _create_client()
+
+        client_factory.assert_called_once_with(
+            api_key="test-key",
+            http_options={
+                "api_version": "v1beta",
+                "retry_options": {
+                    "attempts": 5,
+                    "initial_delay": 1.0,
+                    "max_delay": 60.0,
+                    "exp_base": 2.0,
+                    "jitter": 1.0,
+                    "http_status_codes": [429],
+                },
+            },
+        )
 
 
 class TaiwanWorkdayTests(unittest.TestCase):
