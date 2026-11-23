@@ -60,6 +60,41 @@ class SchedulerTests(unittest.TestCase):
 
 
 class ScriptGenerationTests(unittest.TestCase):
+    def test_prompt_limits_greeting_and_signoff_to_episode_edges(self) -> None:
+        source = SourceItem(
+            source_id="S01",
+            category="news",
+            source_name="Example News",
+            title="Market update",
+            url="https://example.com/market",
+            published="2026-11-20",
+            summary="Markets moved.",
+        )
+
+        for section_number, expected, unexpected in (
+            (1, "全集唯一的開場", "全集唯一的結尾"),
+            (5, "同一集節目中間的連續段落", "全集唯一的開場"),
+            (10, "全集唯一的結尾", "同一集節目中間的連續段落"),
+        ):
+            with self.subTest(section_number=section_number):
+                client = Mock()
+                client.models.generate_content.return_value = SimpleNamespace(
+                    text="市場消息摘要。[S01]"
+                )
+
+                generate_script_section(
+                    client,
+                    date(2026, 11, 20),
+                    section_number,
+                    "單元",
+                    "市場",
+                    [source],
+                )
+
+                prompt = client.models.generate_content.call_args.kwargs["contents"]
+                self.assertIn(expected, prompt)
+                self.assertNotIn(unexpected, prompt)
+
     def test_generates_from_supplied_sources_without_search_grounding(self) -> None:
         client = Mock()
         client.models.generate_content.return_value = SimpleNamespace(
