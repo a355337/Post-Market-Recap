@@ -399,12 +399,25 @@ class EpisodeNamingTests(unittest.TestCase):
 
     def test_summary_longer_than_eight_characters_is_rejected(self) -> None:
         client = Mock()
-        client.models.generate_content.return_value = SimpleNamespace(
-            text="科技股震盪市場觀望"
-        )
+        client.models.generate_content.side_effect = [
+            SimpleNamespace(text="科技股震盪市場觀望"),
+            SimpleNamespace(text="科技股震盪市場觀望"),
+        ]
 
         with self.assertRaisesRegex(RuntimeError, "1-8 characters"):
             generate_episode_summary(client, ["逐字稿內容"])
+
+    def test_long_summary_is_revised_to_eight_characters(self) -> None:
+        client = Mock()
+        client.models.generate_content.side_effect = [
+            SimpleNamespace(text="科技股震盪市場觀望"),
+            SimpleNamespace(text="科技股震盪"),
+        ]
+
+        summary = generate_episode_summary(client, ["逐字稿內容"])
+
+        self.assertEqual(summary, "科技股震盪")
+        self.assertEqual(client.models.generate_content.call_count, 2)
 
     def test_spotify_description_is_trimmed_and_limited_to_100_characters(self) -> None:
         description = "本集聚焦科技股走勢與聯準會利率政策。" * 2

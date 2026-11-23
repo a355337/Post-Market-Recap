@@ -238,6 +238,22 @@ def generate_episode_summary(client: Any, sections: list[str]) -> str:
     if not isinstance(text, str) or not text.strip():
         raise RuntimeError("Gemini did not return an episode summary.")
     summary = re.sub(r"[\s「」『』《》〈〉“”\"'`。，、；：！？.!?,;:：]+", "", text)
+    if len(summary) > 8:
+        retry_prompt = f"""{prompt}
+
+上一版標題超過 8 個中文字，請濃縮並重新輸出一個 1 至 8 個中文字的標題。
+只輸出標題，不可加標點、引號、空白、EP 編號或說明。
+
+上一版標題：{summary}"""
+        response = _generate_content(
+            client, "episode summary length repair", retry_prompt
+        )
+        text = getattr(response, "text", None)
+        if not isinstance(text, str) or not text.strip():
+            raise RuntimeError("Gemini did not return an episode summary.")
+        summary = re.sub(
+            r"[\s「」『』《》〈〉“”\"'`。，、；：！？.!?,;:：]+", "", text
+        )
     if not summary or len(summary) > 8:
         raise RuntimeError(
             f"Gemini episode summary must be 1-8 characters; received {len(summary)}."
