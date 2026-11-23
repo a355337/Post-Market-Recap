@@ -8,8 +8,10 @@ import os
 import re
 import subprocess
 import tempfile
+import threading
 import time
 import wave
+from collections.abc import Callable
 from datetime import date, datetime, time as clock_time, timedelta
 from pathlib import Path
 from typing import Any
@@ -38,6 +40,7 @@ TTS_HOST_B_LABEL = "主持人乙"
 GEMINI_RETRY_ATTEMPTS = 5
 GEMINI_RETRY_INITIAL_DELAY = 1.0
 GEMINI_RETRY_MAX_DELAY = 60.0
+GEMINI_PROGRESS_INTERVAL = 30.0
 EPISODE_SECTIONS = (
     ("開場與隔夜市場", "最新美股交易日、主要指數、整體市場情緒與重要變化。"),
     ("利率與總體經濟", "美國公債殖利率、通膨、就業與近期重要經濟數據。"),
@@ -54,12 +57,36 @@ EPISODE_SECTIONS = (
 logger = logging.getLogger("market_podcast")
 
 
+def _run_with_progress_logging(operation: str, request: Callable[[], Any]) -> Any:
+    started_at = time.monotonic()
+    stopped = threading.Event()
+
+    def log_progress() -> None:
+        while not stopped.wait(GEMINI_PROGRESS_INTERVAL):
+            logger.info(
+                "%s still in progress (%.0f seconds elapsed)",
+                operation,
+                time.monotonic() - started_at,
+            )
+
+    progress_thread = threading.Thread(target=log_progress, daemon=True)
+    progress_thread.start()
+    try:
+        return request()
+    finally:
+        stopped.set()
+        progress_thread.join()
+
+
 def _generate_content(client: Any, operation: str, prompt: str) -> Any:
     model = os.getenv("GEMINI_TEXT_MODEL", TEXT_MODEL_DEFAULT)
     started_at = time.monotonic()
     logger.info("Gemini request started: %s (model=%s)", operation, model)
     try:
-        response = client.models.generate_content(model=model, contents=prompt)
+        response = _run_with_progress_logging(
+            f"Gemini request {operation}",
+            lambda: client.models.generate_content(model=model, contents=prompt),
+        )
     except KeyboardInterrupt:
         logger.exception(
             "Gemini request interrupted: %s after %.1f seconds",
@@ -484,7 +511,36 @@ def create_episode(episode_date: date, output_dir: Path) -> Path:
     for section_number, text in enumerate(transcript_sections, start=1):
         logger.info("Synthesizing section %d/%d", section_number, len(EPISODE_SECTIONS))
         audio_text = re.sub(r"\s*\[S\d+\]", "", text)
-        audio_chunks.append(synthesize_section(client, audio_text))
+        started_at = time.monotonic()
+        try:
+            audio = _run_with_progress_logging(
+                f"TTS synthesis section {section_number}/{len(EPISODE_SECTIONS)}",
+                lambda: synthesize_section(client, audio_text),
+            )
+        except KeyboardInterrupt:
+            logger.exception(
+                "TTS synthesis section %d/%d interrupted after %.1f seconds",
+                section_number,
+                len(EPISODE_SECTIONS),
+                time.monotonic() - started_at,
+            )
+            raise
+        except Exception:
+            logger.exception(
+                "TTS synthesis section %d/%d failed after %.1f seconds",
+                section_number,
+                len(EPISODE_SECTIONS),
+                time.monotonic() - started_at,
+            )
+            raise
+        logger.info(
+            "TTS synthesis section %d/%d completed in %.1f seconds (%d audio bytes)",
+            section_number,
+            len(EPISODE_SECTIONS),
+            time.monotonic() - started_at,
+            len(audio),
+        )
+        audio_chunks.append(audio)
 
     episode_name = f"美股財經Podcast_{episode_date:%Y%m%d}"
     duration = convert_wav_chunks_to_mp3(audio_chunks, mp3_path)
@@ -587,6 +643,13 @@ def main() -> None:
             logging.StreamHandler(),
             logging.FileHandler(args.output_dir / "podcast.log", encoding="utf-8"),
         ],
+    )
+    logging.getLogger("google_genai._api_client").setLevel(logging.INFO)
+    logger.info(
+        "Gemini retry policy: %d attempts total, initial delay %.1f seconds, max delay %.1f seconds.",
+        GEMINI_RETRY_ATTEMPTS,
+        GEMINI_RETRY_INITIAL_DELAY,
+        GEMINI_RETRY_MAX_DELAY,
     )
 
     if args.mode == "once":

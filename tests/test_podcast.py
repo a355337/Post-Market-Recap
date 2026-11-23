@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import time as time_module
 import unittest
 from datetime import date, datetime, time, timedelta
 from pathlib import Path
@@ -15,6 +16,7 @@ from podcast import (
     TAIPEI,
     _create_client,
     _generate_content,
+    _run_with_progress_logging,
     build_episode_mp3_path,
     generate_script_section,
     generate_episode_summary,
@@ -60,6 +62,22 @@ class GeminiClientTests(unittest.TestCase):
         self.assertTrue(
             any(
                 "Gemini request interrupted: script section 6" in line
+                for line in captured.output
+            )
+        )
+
+    def test_logs_progress_while_a_request_is_waiting(self) -> None:
+        with (
+            patch("podcast.GEMINI_PROGRESS_INTERVAL", 0.01),
+            self.assertLogs("market_podcast", level="INFO") as captured,
+        ):
+            _run_with_progress_logging(
+                "Gemini test request", lambda: time_module.sleep(0.03)
+            )
+
+        self.assertTrue(
+            any(
+                "Gemini test request still in progress" in line
                 for line in captured.output
             )
         )
