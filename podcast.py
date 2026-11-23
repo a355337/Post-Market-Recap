@@ -667,36 +667,47 @@ def create_episode(episode_date: date, output_dir: Path) -> Path:
         encoding="utf-8",
     )
 
+    split_point = (len(transcript_sections) + 1) // 2
+    tts_batches = [
+        batch
+        for batch in (
+            transcript_sections[:split_point],
+            transcript_sections[split_point:],
+        )
+        if batch
+    ]
     audio_chunks: list[bytes] = []
-    for section_number, text in enumerate(transcript_sections, start=1):
-        logger.info("Synthesizing section %d/%d", section_number, len(EPISODE_SECTIONS))
-        audio_text = re.sub(r"\s*\[S\d+\]", "", text)
+    for batch_number, sections in enumerate(tts_batches, start=1):
+        logger.info("Synthesizing TTS batch %d/%d", batch_number, len(tts_batches))
+        audio_text = "\n\n".join(
+            re.sub(r"\s*\[S\d+\]", "", text) for text in sections
+        )
         started_at = time.monotonic()
         try:
             audio = _run_with_progress_logging(
-                f"TTS synthesis section {section_number}/{len(EPISODE_SECTIONS)}",
+                f"TTS synthesis batch {batch_number}/{len(tts_batches)}",
                 lambda: synthesize_section(client, audio_text),
             )
         except KeyboardInterrupt:
             logger.exception(
-                "TTS synthesis section %d/%d interrupted after %.1f seconds",
-                section_number,
-                len(EPISODE_SECTIONS),
+                "TTS synthesis batch %d/%d interrupted after %.1f seconds",
+                batch_number,
+                len(tts_batches),
                 time.monotonic() - started_at,
             )
             raise
         except Exception:
             logger.exception(
-                "TTS synthesis section %d/%d failed after %.1f seconds",
-                section_number,
-                len(EPISODE_SECTIONS),
+                "TTS synthesis batch %d/%d failed after %.1f seconds",
+                batch_number,
+                len(tts_batches),
                 time.monotonic() - started_at,
             )
             raise
         logger.info(
-            "TTS synthesis section %d/%d completed in %.1f seconds (%d audio bytes)",
-            section_number,
-            len(EPISODE_SECTIONS),
+            "TTS synthesis batch %d/%d completed in %.1f seconds (%d audio bytes)",
+            batch_number,
+            len(tts_batches),
             time.monotonic() - started_at,
             len(audio),
         )

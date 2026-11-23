@@ -427,6 +427,7 @@ class EpisodeCacheTests(unittest.TestCase):
         )
 
         def create_mp3(_audio_chunks: list[bytes], output_path: Path) -> float:
+            self.assertEqual(len(_audio_chunks), 2)
             output_path.write_bytes(b"mp3")
             return 60.0
 
@@ -436,7 +437,12 @@ class EpisodeCacheTests(unittest.TestCase):
                 patch("podcast._create_client", return_value=Mock()),
                 patch(
                     "podcast.EPISODE_SECTIONS",
-                    (("開場", "市場概況"),),
+                    (
+                        ("開場", "市場概況"),
+                        ("利率", "總體經濟"),
+                        ("企業", "財報"),
+                        ("結尾", "重點回顧"),
+                    ),
                 ),
                 patch(
                     "podcast.collect_sources",
@@ -451,8 +457,8 @@ class EpisodeCacheTests(unittest.TestCase):
                 patch("podcast.generate_spotify_description", return_value="市場說明"),
                 patch(
                     "podcast.synthesize_section",
-                    side_effect=[RuntimeError("TTS failed"), b"audio"],
-                ),
+                    side_effect=[RuntimeError("TTS failed"), b"audio-1", b"audio-2"],
+                ) as synthesize,
                 patch("podcast.convert_wav_chunks_to_mp3", side_effect=create_mp3),
             ):
                 with self.assertLogs("market_podcast", level="ERROR"):
@@ -470,7 +476,8 @@ class EpisodeCacheTests(unittest.TestCase):
                 mp3_path = create_episode(episode_date, output_dir)
 
             collect_sources.assert_called_once()
-            generate_script.assert_called_once()
+            self.assertEqual(generate_script.call_count, 4)
+            self.assertEqual(synthesize.call_count, 3)
             self.assertTrue(mp3_path.is_file())
             self.assertFalse(cache_path.exists())
             self.assertTrue(transcript_path.is_file())
