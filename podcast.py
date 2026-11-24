@@ -78,29 +78,34 @@ class TextGenerationResponse:
     text: str
 
 
+def build_adk_gemini_model(model: str, api_key: str | None = None) -> Gemini:
+    client_kwargs: dict[str, Any] = {
+        "http_options": {"api_version": "v1beta"},
+    }
+    if api_key:
+        client_kwargs["api_key"] = api_key
+    return Gemini(
+        model=model,
+        retry_options=types.HttpRetryOptions(
+            attempts=GEMINI_RETRY_ATTEMPTS,
+            initial_delay=GEMINI_RETRY_INITIAL_DELAY,
+            max_delay=GEMINI_RETRY_MAX_DELAY,
+            exp_base=2.0,
+            jitter=1.0,
+            http_status_codes=[429, 503],
+        ),
+        client_kwargs=client_kwargs,
+    )
+
+
 class AdkTextModel:
     def __init__(self, api_key: str) -> None:
         self.api_key = api_key
 
     def generate_content(self, *, model: str, contents: str) -> TextGenerationResponse:
-        adk_model = Gemini(
-            model=model,
-            retry_options=types.HttpRetryOptions(
-                attempts=GEMINI_RETRY_ATTEMPTS,
-                initial_delay=GEMINI_RETRY_INITIAL_DELAY,
-                max_delay=GEMINI_RETRY_MAX_DELAY,
-                exp_base=2.0,
-                jitter=1.0,
-                http_status_codes=[429, 503],
-            ),
-            client_kwargs={
-                "api_key": self.api_key,
-                "http_options": {"api_version": "v1beta"},
-            },
-        )
         agent = Agent(
             name="market_podcast_writer",
-            model=adk_model,
+            model=build_adk_gemini_model(model, self.api_key),
             instruction=(
                 "Follow the user's writing request and constraints exactly. "
                 "Return only the requested content."
@@ -839,10 +844,11 @@ def convert_wav_chunks_to_mp3(chunks: list[bytes], output_path: Path) -> float:
 
 
 def _create_client() -> PodcastClient:
-    api_key = os.getenv("GEMINI_API_KEY")
+    api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
     if not api_key:
         raise RuntimeError(
-            "GEMINI_API_KEY is missing. Add it to the .env file or environment."
+            "GEMINI_API_KEY or GOOGLE_API_KEY is missing. "
+            "Add one to the .env file or environment."
         )
     audio_client = genai.Client(
         api_key=api_key,

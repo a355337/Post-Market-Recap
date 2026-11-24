@@ -141,6 +141,19 @@ class AdkClientTests(unittest.TestCase):
         self.assertEqual(client.text_model.api_key, "test-key")
         self.assertIs(client.audio_client, client_factory.return_value)
 
+    def test_create_client_accepts_google_api_key_for_adk(self) -> None:
+        with (
+            patch.dict(
+                "os.environ",
+                {"GEMINI_API_KEY": "", "GOOGLE_API_KEY": "test-key"},
+                clear=True,
+            ),
+            patch("podcast.genai.Client"),
+        ):
+            client = _create_client()
+
+        self.assertEqual(client.text_model.api_key, "test-key")
+
     def test_adk_agent_uses_configured_model_key_and_returns_final_text(self) -> None:
         final_event = SimpleNamespace(
             is_final_response=lambda: True,

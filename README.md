@@ -54,6 +54,16 @@ Copy-Item .env.example .env
 
 `--force` 會略過週末／國定假日檢查；一般手動執行 `--once` 則遵守上班日限制。
 
+## ADK Web 介面
+
+在專案根目錄啟動 ADK Web：
+
+```powershell
+.\.venv\Scripts\adk.exe web
+```
+
+在 Web UI 選擇 `market_podcast_agent`。只有在明確要求生成時，Agent 才會執行每日節目或主題報告工具；工具會呼叫資料來源與 Gemini API，並在 `output/` 寫入音訊及逐字稿，可能產生 API 費用。每日節目遵守台灣工作日限制；主題報告預設 10 分鐘，可指定 1 至 120 分鐘。
+
 ## 主題報告
 
 使用 `--subject` 產生單一主題的繁體中文報告與 MP3，不受工作日限制：
