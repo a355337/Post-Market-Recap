@@ -19,6 +19,7 @@ from podcast import (
     _create_client,
     _generate_content,
     _run_with_progress_logging,
+    AdkTextModel,
     build_episode_mp3_path,
     create_episode,
     create_subject_report,
@@ -37,7 +38,7 @@ from podcast import (
 )
 
 
-class GeminiClientTests(unittest.TestCase):
+class AdkClientTests(unittest.TestCase):
     def test_confirm_gemini_settings_waits_for_enter(self) -> None:
         with (
             patch("builtins.input", return_value="") as input_mock,
@@ -46,7 +47,10 @@ class GeminiClientTests(unittest.TestCase):
             confirm_gemini_settings()
 
         input_mock.assert_called_once()
-        self.assertIn("文本模型：gemini-3.5-flash-lite", output.getvalue())
+        self.assertIn(
+            "文字模型（Google ADK Agent）：gemini-3.5-flash-lite",
+            output.getvalue(),
+        )
         self.assertIn("TTS 模型：gemini-3.8-flash-tts", output.getvalue())
         self.assertIn(
             "主持人 Voice ID：voice_x3oo1ycwy9ne",
@@ -61,9 +65,9 @@ class GeminiClientTests(unittest.TestCase):
         ):
             confirm_gemini_settings()
 
-    def test_logs_gemini_request_start_and_completion(self) -> None:
+    def test_logs_adk_request_start_and_completion(self) -> None:
         client = Mock()
-        client.models.generate_content.return_value = SimpleNamespace(text="ok")
+        client.text_model.generate_content.return_value = SimpleNamespace(text="ok")
 
         with self.assertLogs("market_podcast", level="INFO") as captured:
             response = _generate_content(client, "script section 6", "prompt")
@@ -71,20 +75,20 @@ class GeminiClientTests(unittest.TestCase):
         self.assertEqual(response.text, "ok")
         self.assertTrue(
             any(
-                "Gemini request started: script section 6" in line
+                "Google ADK request started: script section 6" in line
                 for line in captured.output
             )
         )
         self.assertTrue(
             any(
-                "Gemini request completed: script section 6" in line
+                "Google ADK request completed: script section 6" in line
                 for line in captured.output
             )
         )
 
-    def test_logs_traceback_when_gemini_request_is_interrupted(self) -> None:
+    def test_logs_traceback_when_adk_request_is_interrupted(self) -> None:
         client = Mock()
-        client.models.generate_content.side_effect = KeyboardInterrupt
+        client.text_model.generate_content.side_effect = KeyboardInterrupt
 
         with self.assertLogs("market_podcast", level="ERROR") as captured:
             with self.assertRaises(KeyboardInterrupt):
@@ -92,7 +96,7 @@ class GeminiClientTests(unittest.TestCase):
 
         self.assertTrue(
             any(
-                "Gemini request interrupted: script section 6" in line
+                "Google ADK request interrupted: script section 6" in line
                 for line in captured.output
             )
         )
@@ -118,7 +122,7 @@ class GeminiClientTests(unittest.TestCase):
             patch.dict("os.environ", {"GEMINI_API_KEY": "test-key"}),
             patch("podcast.genai.Client") as client_factory,
         ):
-            _create_client()
+            client = _create_client()
 
         client_factory.assert_called_once_with(
             api_key="test-key",
@@ -133,6 +137,39 @@ class GeminiClientTests(unittest.TestCase):
                     "http_status_codes": [429, 503],
                 },
             },
+        )
+        self.assertEqual(client.text_model.api_key, "test-key")
+        self.assertIs(client.audio_client, client_factory.return_value)
+
+    def test_adk_agent_uses_configured_model_key_and_returns_final_text(self) -> None:
+        final_event = SimpleNamespace(
+            is_final_response=lambda: True,
+            content=SimpleNamespace(
+                parts=[SimpleNamespace(text="  播客內容  "), SimpleNamespace(text=None)]
+            ),
+        )
+        with patch("podcast.Runner") as runner_factory:
+            runner_factory.return_value.run.return_value = [final_event]
+
+            response = AdkTextModel("test-key").generate_content(
+                model="gemini-test",
+                contents="請撰寫內容",
+            )
+
+        self.assertEqual(response.text, "播客內容")
+        agent = runner_factory.call_args.kwargs["agent"]
+        self.assertEqual(agent.name, "market_podcast_writer")
+        self.assertEqual(agent.model.model, "gemini-test")
+        self.assertEqual(agent.model.client_kwargs["api_key"], "test-key")
+        self.assertEqual(agent.model.retry_options.attempts, 5)
+        self.assertEqual(agent.model.retry_options.http_status_codes, [429, 503])
+        self.assertEqual(
+            agent.model.client_kwargs["http_options"]["api_version"],
+            "v1beta",
+        )
+        self.assertEqual(
+            runner_factory.return_value.run.call_args.kwargs["new_message"].parts[0].text,
+            "請撰寫內容",
         )
 
 
@@ -176,7 +213,7 @@ class SchedulerTests(unittest.TestCase):
 class ScriptGenerationTests(unittest.TestCase):
     def test_prompt_requests_one_host_monologue_format(self) -> None:
         client = Mock()
-        client.models.generate_content.return_value = SimpleNamespace(
+        client.text_model.generate_content.return_value = SimpleNamespace(
             text="市場回顧。[S01]\n接下來看利率。[S01]"
         )
         source = SourceItem(
@@ -198,14 +235,14 @@ class ScriptGenerationTests(unittest.TestCase):
             [source],
         )
 
-        prompt = client.models.generate_content.call_args.kwargs["contents"]
+        prompt = client.text_model.generate_content.call_args.kwargs["contents"]
         self.assertIn("單一主持人獨白格式", prompt)
         self.assertIn("陳知衡", prompt)
         self.assertIn("沉穩、理性", prompt)
 
     def test_recent_episode_context_is_included_as_nonfactual_context(self) -> None:
         client = Mock()
-        client.models.generate_content.return_value = SimpleNamespace(
+        client.text_model.generate_content.return_value = SimpleNamespace(
             text="市場消息摘要。[S01]"
         )
         source = SourceItem(
@@ -228,7 +265,7 @@ class ScriptGenerationTests(unittest.TestCase):
             "【前集逐字稿：2026-11-20】\n前集內容",
         )
 
-        prompt = client.models.generate_content.call_args.kwargs["contents"]
+        prompt = client.text_model.generate_content.call_args.kwargs["contents"]
         self.assertIn("前集內容", prompt)
         self.assertIn("不得沿用其中的新聞或數字", prompt)
         self.assertIn("下方本段來源再次支持", prompt)
@@ -274,7 +311,7 @@ class ScriptGenerationTests(unittest.TestCase):
         ):
             with self.subTest(section_number=section_number):
                 client = Mock()
-                client.models.generate_content.return_value = SimpleNamespace(
+                client.text_model.generate_content.return_value = SimpleNamespace(
                     text="市場消息摘要。[S01]"
                 )
 
@@ -287,13 +324,13 @@ class ScriptGenerationTests(unittest.TestCase):
                     [source],
                 )
 
-                prompt = client.models.generate_content.call_args.kwargs["contents"]
+                prompt = client.text_model.generate_content.call_args.kwargs["contents"]
                 self.assertIn(expected, prompt)
                 self.assertNotIn(unexpected, prompt)
 
     def test_generates_from_supplied_sources_without_search_grounding(self) -> None:
         client = Mock()
-        client.models.generate_content.return_value = SimpleNamespace(
+        client.text_model.generate_content.return_value = SimpleNamespace(
             text="市場消息摘要。[S01]"
         )
         source = SourceItem(
@@ -318,13 +355,13 @@ class ScriptGenerationTests(unittest.TestCase):
         self.assertEqual(text, "市場消息摘要。[S01]")
         self.assertEqual(cited_sources, {"S01"})
         client.interactions.create.assert_not_called()
-        prompt = client.models.generate_content.call_args.kwargs["contents"]
+        prompt = client.text_model.generate_content.call_args.kwargs["contents"]
         self.assertIn("https://example.com/market", prompt)
         self.assertNotIn("google_search", prompt)
 
     def test_retries_once_when_response_has_no_source_citations(self) -> None:
         client = Mock()
-        client.models.generate_content.side_effect = [
+        client.text_model.generate_content.side_effect = [
             SimpleNamespace(text="市場消息摘要。"),
             SimpleNamespace(text="市場消息摘要。[S01]"),
         ]
@@ -349,14 +386,14 @@ class ScriptGenerationTests(unittest.TestCase):
 
         self.assertEqual(text, "市場消息摘要。[S01]")
         self.assertEqual(cited_sources, {"S01"})
-        self.assertEqual(client.models.generate_content.call_count, 2)
-        retry_prompt = client.models.generate_content.call_args.kwargs["contents"]
+        self.assertEqual(client.text_model.generate_content.call_count, 2)
+        retry_prompt = client.text_model.generate_content.call_args.kwargs["contents"]
         self.assertIn("上一版草稿沒有任何來源標記", retry_prompt)
         self.assertIn("市場消息摘要。", retry_prompt)
 
     def test_still_rejects_response_without_citations_after_bounded_retries(self) -> None:
         client = Mock()
-        client.models.generate_content.side_effect = [
+        client.text_model.generate_content.side_effect = [
             SimpleNamespace(text="市場消息摘要。"),
             SimpleNamespace(text="修訂後仍沒有標記。"),
             SimpleNamespace(text="第二次修訂仍沒有標記。"),
@@ -382,11 +419,11 @@ class ScriptGenerationTests(unittest.TestCase):
                 [source],
             )
 
-        self.assertEqual(client.models.generate_content.call_count, 4)
+        self.assertEqual(client.text_model.generate_content.call_count, 4)
 
     def test_retries_once_when_response_cites_unknown_source(self) -> None:
         client = Mock()
-        client.models.generate_content.side_effect = [
+        client.text_model.generate_content.side_effect = [
             SimpleNamespace(text="市場消息摘要。[S17]"),
             SimpleNamespace(text="市場消息摘要。[S01]"),
         ]
@@ -411,14 +448,14 @@ class ScriptGenerationTests(unittest.TestCase):
 
         self.assertEqual(text, "市場消息摘要。[S01]")
         self.assertEqual(cited_sources, {"S01"})
-        self.assertEqual(client.models.generate_content.call_count, 2)
-        retry_prompt = client.models.generate_content.call_args.kwargs["contents"]
+        self.assertEqual(client.text_model.generate_content.call_count, 2)
+        retry_prompt = client.text_model.generate_content.call_args.kwargs["contents"]
         self.assertIn("[S17]", retry_prompt)
         self.assertIn("只能使用本提示列出的來源 ID", retry_prompt)
 
     def test_rejects_unknown_source_marker(self) -> None:
         client = Mock()
-        client.models.generate_content.side_effect = [
+        client.text_model.generate_content.side_effect = [
             SimpleNamespace(text="未確認消息。[S99]"),
             SimpleNamespace(text="修訂後仍引用無效來源。[S98]"),
             SimpleNamespace(text="第二次修訂仍引用無效來源。[S97]"),
@@ -444,7 +481,7 @@ class ScriptGenerationTests(unittest.TestCase):
                 [source],
             )
 
-        self.assertEqual(client.models.generate_content.call_count, 4)
+        self.assertEqual(client.text_model.generate_content.call_count, 4)
 
 
 class EpisodeCacheTests(unittest.TestCase):
@@ -524,7 +561,7 @@ class EpisodeCacheTests(unittest.TestCase):
 class SubjectReportTests(unittest.TestCase):
     def test_retries_subject_report_until_repaired_response_has_citations(self) -> None:
         client = Mock()
-        client.models.generate_content.side_effect = [
+        client.text_model.generate_content.side_effect = [
             SimpleNamespace(text="初稿內容"),
             SimpleNamespace(text="第一次修訂仍無來源標記。"),
             SimpleNamespace(text="第二次修訂內容 [S01]"),
@@ -548,8 +585,8 @@ class SubjectReportTests(unittest.TestCase):
 
         self.assertEqual(report, "第二次修訂內容 [S01]")
         self.assertEqual(cited_source_ids, {"S01"})
-        self.assertEqual(client.models.generate_content.call_count, 3)
-        second_repair_prompt = client.models.generate_content.call_args_list[2].kwargs[
+        self.assertEqual(client.text_model.generate_content.call_count, 3)
+        second_repair_prompt = client.text_model.generate_content.call_args_list[2].kwargs[
             "contents"
         ]
         self.assertIn("上一版草稿沒有任何來源標記", second_repair_prompt)
@@ -557,7 +594,7 @@ class SubjectReportTests(unittest.TestCase):
 
     def test_repairs_subject_report_without_source_citations(self) -> None:
         client = Mock()
-        client.models.generate_content.side_effect = [
+        client.text_model.generate_content.side_effect = [
             SimpleNamespace(text="初稿內容"),
             SimpleNamespace(text="修訂內容 [S01]"),
         ]
@@ -581,20 +618,20 @@ class SubjectReportTests(unittest.TestCase):
 
         self.assertEqual(report, "修訂內容 [S01]")
         self.assertEqual(cited_source_ids, {"S01"})
-        self.assertEqual(client.models.generate_content.call_count, 2)
-        prompt = client.models.generate_content.call_args_list[0].kwargs["contents"]
+        self.assertEqual(client.text_model.generate_content.call_count, 2)
+        prompt = client.text_model.generate_content.call_args_list[0].kwargs["contents"]
         self.assertIn("quantum computing", prompt)
         self.assertIn("依語意判斷", prompt)
         self.assertIn("約 12 分鐘", prompt)
         self.assertIn("4128 至 4560 個中文字", prompt)
-        repair_prompt = client.models.generate_content.call_args_list[1].kwargs[
+        repair_prompt = client.text_model.generate_content.call_args_list[1].kwargs[
             "contents"
         ]
         self.assertIn("維持原稿篇幅", repair_prompt)
 
     def test_stops_when_no_sources_are_relevant_to_the_subject(self) -> None:
         client = Mock()
-        client.models.generate_content.return_value = SimpleNamespace(
+        client.text_model.generate_content.return_value = SimpleNamespace(
             text="目前收集到的資料沒有與主題直接相關的來源。"
         )
         source = SourceItem(
@@ -615,7 +652,7 @@ class SubjectReportTests(unittest.TestCase):
                 [source],
             )
 
-        client.models.generate_content.assert_called_once()
+        client.text_model.generate_content.assert_called_once()
 
     def test_subject_option_parses_without_daily_mode(self) -> None:
         with patch(
@@ -789,7 +826,7 @@ class PodcastSynthesisTests(unittest.TestCase):
 class EpisodeNamingTests(unittest.TestCase):
     def test_summary_is_trimmed(self) -> None:
         client = Mock()
-        client.models.generate_content.return_value = SimpleNamespace(
+        client.text_model.generate_content.return_value = SimpleNamespace(
             text="「科技股震盪」\n"
         )
 
@@ -799,7 +836,7 @@ class EpisodeNamingTests(unittest.TestCase):
 
     def test_long_summary_warns_and_is_trimmed_to_100_characters(self) -> None:
         client = Mock()
-        client.models.generate_content.return_value = SimpleNamespace(
+        client.text_model.generate_content.return_value = SimpleNamespace(
             text="科技股震盪市場觀望" * 20
         )
 
@@ -815,7 +852,7 @@ class EpisodeNamingTests(unittest.TestCase):
     def test_spotify_description_is_trimmed_and_limited_to_1000_characters(self) -> None:
         description = "本集聚焦科技股走勢與聯準會利率政策。" * 2
         client = Mock()
-        client.models.generate_content.return_value = SimpleNamespace(
+        client.text_model.generate_content.return_value = SimpleNamespace(
             text=f"「{description}」\n"
         )
 
@@ -826,7 +863,7 @@ class EpisodeNamingTests(unittest.TestCase):
 
     def test_spotify_description_over_1000_characters_is_trimmed(self) -> None:
         client = Mock()
-        client.models.generate_content.return_value = SimpleNamespace(
+        client.text_model.generate_content.return_value = SimpleNamespace(
             text="美股市場焦點" * 200
         )
 
@@ -838,7 +875,7 @@ class EpisodeNamingTests(unittest.TestCase):
     def test_spotify_description_trims_at_a_sentence_boundary_when_possible(self) -> None:
         sentence = "本集聚焦科技股與市場走勢" * 4 + "。"
         client = Mock()
-        client.models.generate_content.return_value = SimpleNamespace(
+        client.text_model.generate_content.return_value = SimpleNamespace(
             text=sentence + "這是多餘的延伸內容" * 150
         )
 

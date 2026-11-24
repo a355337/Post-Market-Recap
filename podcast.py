@@ -13,17 +13,23 @@ import threading
 import time
 import wave
 from collections.abc import Callable
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from datetime import date, datetime, timedelta
 from datetime import time as clock_time
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 from zoneinfo import ZoneInfo
 
 import holidays
 import imageio_ffmpeg
 from dotenv import load_dotenv
 from google import genai
+from google.adk.agents import Agent
+from google.adk.models import Gemini
+from google.adk.runners import Runner
+from google.adk.sessions import InMemorySessionService
+from google.genai import types
 from google.genai.errors import APIError
 
 from news_sources import SourceItem, collect_sources, select_sources
@@ -67,6 +73,74 @@ EPISODE_SECTIONS = (
 logger = logging.getLogger("market_podcast")
 
 
+@dataclass(frozen=True)
+class TextGenerationResponse:
+    text: str
+
+
+class AdkTextModel:
+    def __init__(self, api_key: str) -> None:
+        self.api_key = api_key
+
+    def generate_content(self, *, model: str, contents: str) -> TextGenerationResponse:
+        adk_model = Gemini(
+            model=model,
+            retry_options=types.HttpRetryOptions(
+                attempts=GEMINI_RETRY_ATTEMPTS,
+                initial_delay=GEMINI_RETRY_INITIAL_DELAY,
+                max_delay=GEMINI_RETRY_MAX_DELAY,
+                exp_base=2.0,
+                jitter=1.0,
+                http_status_codes=[429, 503],
+            ),
+            client_kwargs={
+                "api_key": self.api_key,
+                "http_options": {"api_version": "v1beta"},
+            },
+        )
+        agent = Agent(
+            name="market_podcast_writer",
+            model=adk_model,
+            instruction=(
+                "Follow the user's writing request and constraints exactly. "
+                "Return only the requested content."
+            ),
+        )
+        app_name = "market_podcast"
+        runner = Runner(
+            agent=agent,
+            app_name=app_name,
+            session_service=InMemorySessionService(),
+            auto_create_session=True,
+        )
+        final_text = ""
+        for event in runner.run(
+            user_id="podcast",
+            session_id=uuid4().hex,
+            new_message=types.Content(
+                role="user",
+                parts=[types.Part(text=contents)],
+            ),
+        ):
+            if event.is_final_response() and event.content and event.content.parts:
+                final_text = "".join(
+                    part.text for part in event.content.parts if part.text
+                )
+        if not final_text.strip():
+            raise RuntimeError("Google ADK agent did not return text.")
+        return TextGenerationResponse(text=final_text.strip())
+
+
+@dataclass(frozen=True)
+class PodcastClient:
+    text_model: AdkTextModel
+    audio_client: genai.Client
+
+    @property
+    def interactions(self) -> Any:
+        return self.audio_client.interactions
+
+
 def _run_with_progress_logging(operation: str, request: Callable[[], Any]) -> Any:
     started_at = time.monotonic()
     stopped = threading.Event()
@@ -91,28 +165,28 @@ def _run_with_progress_logging(operation: str, request: Callable[[], Any]) -> An
 def _generate_content(client: Any, operation: str, prompt: str) -> Any:
     model = GEMINI_TEXT_MODEL
     started_at = time.monotonic()
-    logger.info("Gemini request started: %s (model=%s)", operation, model)
+    logger.info("Google ADK request started: %s (model=%s)", operation, model)
     try:
         response = _run_with_progress_logging(
-            f"Gemini request {operation}",
-            lambda: client.models.generate_content(model=model, contents=prompt),
+            f"Google ADK request {operation}",
+            lambda: client.text_model.generate_content(model=model, contents=prompt),
         )
     except KeyboardInterrupt:
         logger.exception(
-            "Gemini request interrupted: %s after %.1f seconds",
+            "Google ADK request interrupted: %s after %.1f seconds",
             operation,
             time.monotonic() - started_at,
         )
         raise
     except Exception:
         logger.exception(
-            "Gemini request failed: %s after %.1f seconds",
+            "Google ADK request failed: %s after %.1f seconds",
             operation,
             time.monotonic() - started_at,
         )
         raise
     logger.info(
-        "Gemini request completed: %s in %.1f seconds",
+        "Google ADK request completed: %s in %.1f seconds",
         operation,
         time.monotonic() - started_at,
     )
@@ -764,13 +838,13 @@ def convert_wav_chunks_to_mp3(chunks: list[bytes], output_path: Path) -> float:
     return _probe_mp3_duration(output_path)
 
 
-def _create_client() -> Any:
+def _create_client() -> PodcastClient:
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
         raise RuntimeError(
             "GEMINI_API_KEY is missing. Add it to the .env file or environment."
         )
-    return genai.Client(
+    audio_client = genai.Client(
         api_key=api_key,
         http_options={
             "api_version": "v1beta",
@@ -784,6 +858,7 @@ def _create_client() -> Any:
             },
         },
     )
+    return PodcastClient(text_model=AdkTextModel(api_key), audio_client=audio_client)
 
 
 def create_episode(episode_date: date, output_dir: Path) -> Path:
@@ -1138,13 +1213,13 @@ def _parse_args() -> argparse.Namespace:
 
 
 def confirm_gemini_settings() -> None:
-    print("請確認以下 Gemini 設定（修改請先到 podcast.py 頂部的設定區）：")
-    print(f"  文本模型：{GEMINI_TEXT_MODEL}")
+    print("請確認以下 Gemini／Google ADK 設定（修改請先到 podcast.py 頂部的設定區）：")
+    print(f"  文字模型（Google ADK Agent）：{GEMINI_TEXT_MODEL}")
     print(f"  TTS 模型：{GEMINI_TTS_MODEL}")
     print(f"  主持人 Voice ID：{GEMINI_TTS_HOST_A_VOICE}")
     response = input("確認無誤請按 Enter；輸入其他內容則取消啟動：").strip()
     if response:
-        raise SystemExit("已取消啟動。請先確認 podcast.py 頂部的 Gemini 設定。")
+        raise SystemExit("已取消啟動。請先確認 podcast.py 頂部的 Gemini／Google ADK 設定。")
 
 
 def main() -> None:

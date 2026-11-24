@@ -1,6 +1,6 @@
 # 台灣上班日美股財經 Podcast
 
-每天台灣時間早上 06:00（週一至週五、排除台灣國定假日），收集 RSS／官方資料後使用 Gemini 撰寫約 30 分鐘的繁體中文單一主持人 Podcast 獨白稿，並合成高質感 MP3。每集另存逐字稿與來源清單。
+每天台灣時間早上 06:00（週一至週五、排除台灣國定假日），收集 RSS／官方資料後使用 Google Agent Development Kit（ADK）中的 Gemini Agent 撰寫約 30 分鐘的繁體中文單一主持人 Podcast 獨白稿，並合成高質感 MP3。每集另存逐字稿與來源清單。
 
 ## 安裝
 
@@ -87,21 +87,21 @@ Unregister-ScheduledTask -TaskName TaiwanMarketPodcast -Confirm:$false
 
 ## 輸出與設定
 
-預設輸出在 `output/`：MP3、逐字稿、Spotify 說明、來源清單及執行記錄。MP3 會額外生成本集摘要，標題以 8 個字內為目標；超過時會記錄警告並仍使用完整摘要命名，檔名格式為 `美股盤後EP1｜摘要.mp3`，EP 編號依 `output/` 內既有集數遞增；另產生 100 字內的 Spotify 摘要，存成 `美股盤後EP1｜摘要_Spotify說明.txt`，可直接複製到 Spotify。因 Windows 檔名不能使用半形 `|`，實際使用外觀相近的全形 `｜`。程式從 CNBC、聯準會與 BLS RSS 收集資料，再交給 Gemini 文字模型撰稿，不使用 Google Search grounding。SEC 8-K feed 與 Twelve Data 行情可選擇設定；行情以 SPY、QQQ、DIA ETF 作為指數代理，並非指數本身的點位。未設定行情 API 時，節目不會猜測點位或漲跌幅。
+預設輸出在 `output/`：MP3、逐字稿、Spotify 說明、來源清單及執行記錄。MP3 會額外生成本集摘要，標題以 8 個字內為目標；超過時會記錄警告並仍使用完整摘要命名，檔名格式為 `美股盤後EP1｜摘要.mp3`，EP 編號依 `output/` 內既有集數遞增；另產生 100 字內的 Spotify 摘要，存成 `美股盤後EP1｜摘要_Spotify說明.txt`，可直接複製到 Spotify。因 Windows 檔名不能使用半形 `|`，實際使用外觀相近的全形 `｜`。程式從 CNBC、聯準會與 BLS RSS 收集資料，再交給 Google ADK 的 Gemini Agent 撰稿，並由 Google GenAI SDK 合成語音；不使用 Google Search grounding。SEC 8-K feed 與 Twelve Data 行情可選擇設定；行情以 SPY、QQQ、DIA ETF 作為指數代理，並非指數本身的點位。未設定行情 API 時，節目不會猜測點位或漲跌幅。
 
 撰稿時會把輸出資料夾中最近三集逐字稿（每集最多 2,500 字元）附在提示中，協助延續敘事並避免重複。前集內容僅作脈絡參考，不能作為新聞事實或行情數字的依據；所有事實仍須由本段最新來源支持。
 
 逐字稿會在開始 TTS 前寫入 `.txt` 並保留；實際送交 TTS 前也會將主持人標籤與來源標註清理乾淨，並另存為 `_TTS逐字稿.txt`。摘要、來源與逐字稿也會暫存為當日快取；若 TTS 失敗，重新執行會沿用快取，不必重新收集來源或生成逐字稿。整集成功後會刪除快取檔，但不會刪除逐字稿。
 
-預設文字模型為 `gemini-4-hydrogen`，語音模型為 `gemini-3.8-flash-tts`。寫稿會產生單一主持人陳知衡的連續獨白格式；配音使用固定單人 Voice ID（預設 `Kore`），並套用相同的「沉穩、理性且具市場分析感」播報風格，不再啟用 TTS Multi-speaker。Gemini 模型與 Voice 設定固定於程式；SEC EDGAR User-Agent 固定於 `podcast.py`，並使用 `a355337@gmail.com` 作為聯絡 Email。若要行情代理報價，設定 [Twelve Data API key](https://twelvedata.com/)，每集會查詢 SPY、QQQ、DIA 三個 ETF。RSS 失敗會記錄警告；所有來源都無法取得時，程式會停止而不讓 Gemini 補猜資料。腳本會記錄實際音訊長度；播讀速度與 Gemini 生成內容會使每集長度略有差異。
+預設文字模型為 `gemini-3.5-flash-lite`，由 Google ADK Agent/Runner 呼叫；語音模型為 `gemini-3.8-flash-tts`。寫稿會產生單一主持人陳知衡的連續獨白格式；配音使用固定單人 Voice ID `voice_x3oo1ycwy9ne`，並套用「沉穩、理性且具市場分析感」播報風格，不使用 TTS Multi-speaker。模型與 Voice 設定固定於程式；SEC EDGAR User-Agent 固定於 `podcast.py`，並使用 `a355337@gmail.com` 作為聯絡 Email。若要行情代理報價，設定 [Twelve Data API key](https://twelvedata.com/)，每集會查詢 SPY、QQQ、DIA 三個 ETF。RSS 失敗會記錄警告；所有來源都無法取得時，程式會停止而不讓 Gemini 補猜資料。腳本會記錄實際音訊長度；播讀速度與模型生成內容會使每集長度略有差異。
 
 若要使用持久化的自訂主持人聲音，執行一次 `python create_voice.py` 建立帶有 `voice_...` ID 的 Voice；取得後請將 ID 固定到 [podcast.py](podcast.py) 的 `GEMINI_TTS_HOST_A_VOICE`，並將試聽檔保存到 `output/finance_voice_sample.wav`。之後執行 `python create_voice.py --list` 可查詢專案中已保存的自訂 Voice；排程不需要再次建立 Voice，直接重用相同 ID。
 
-Gemini API 遇到 HTTP 429（速率限制）或 503（服務暫時無法使用）時，SDK 會最多嘗試 5 次（含首次請求），以指數退避加隨機抖動等待後重送，退避上限為 60 秒；其他錯誤直接回報。若重試仍失敗，手動 `--once` 會報錯結束；常駐排程會記錄錯誤，並於下一個工作日早上 06:00 再試。
+Google ADK 的 Gemini 模型遇到 HTTP 429（速率限制）或 503（服務暫時無法使用）時，會最多嘗試 5 次（含首次請求），以指數退避加隨機抖動等待後重送，退避上限為 60 秒；TTS 的 Google GenAI SDK 使用相同重試設定。其他錯誤直接回報。若重試仍失敗，手動 `--once` 會報錯結束；常駐排程會記錄錯誤，並於下一個工作日早上 06:00 再試。
 
 若文字模型未在單元稿中提供來源標記，程式會額外要求修訂一次，並重新驗證標記；修訂後仍無有效來源標記時會明確報錯。
 
-文字模型請求會在 `output/podcast.log` 記錄開始、完成耗時及失敗／中斷時的例外堆疊，不會記錄提示詞或 API key。
+ADK Agent 請求會在 `output/podcast.log` 記錄開始、完成耗時及失敗／中斷時的例外堆疊，不會記錄提示詞或 API key。
 
 內容僅供資訊參考，不構成投資建議。
 
