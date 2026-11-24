@@ -354,11 +354,13 @@ class ScriptGenerationTests(unittest.TestCase):
         self.assertIn("上一版草稿沒有任何來源標記", retry_prompt)
         self.assertIn("市場消息摘要。", retry_prompt)
 
-    def test_still_rejects_response_without_citations_after_retry(self) -> None:
+    def test_still_rejects_response_without_citations_after_bounded_retries(self) -> None:
         client = Mock()
         client.models.generate_content.side_effect = [
             SimpleNamespace(text="市場消息摘要。"),
             SimpleNamespace(text="修訂後仍沒有標記。"),
+            SimpleNamespace(text="第二次修訂仍沒有標記。"),
+            SimpleNamespace(text="第三次修訂仍沒有標記。"),
         ]
         source = SourceItem(
             source_id="S01",
@@ -380,7 +382,7 @@ class ScriptGenerationTests(unittest.TestCase):
                 [source],
             )
 
-        self.assertEqual(client.models.generate_content.call_count, 2)
+        self.assertEqual(client.models.generate_content.call_count, 4)
 
     def test_retries_once_when_response_cites_unknown_source(self) -> None:
         client = Mock()
@@ -419,6 +421,8 @@ class ScriptGenerationTests(unittest.TestCase):
         client.models.generate_content.side_effect = [
             SimpleNamespace(text="未確認消息。[S99]"),
             SimpleNamespace(text="修訂後仍引用無效來源。[S98]"),
+            SimpleNamespace(text="第二次修訂仍引用無效來源。[S97]"),
+            SimpleNamespace(text="第三次修訂仍引用無效來源。[S96]"),
         ]
         source = SourceItem(
             source_id="S01",
@@ -440,7 +444,7 @@ class ScriptGenerationTests(unittest.TestCase):
                 [source],
             )
 
-        self.assertEqual(client.models.generate_content.call_count, 2)
+        self.assertEqual(client.models.generate_content.call_count, 4)
 
 
 class EpisodeCacheTests(unittest.TestCase):
@@ -518,6 +522,39 @@ class EpisodeCacheTests(unittest.TestCase):
 
 
 class SubjectReportTests(unittest.TestCase):
+    def test_retries_subject_report_until_repaired_response_has_citations(self) -> None:
+        client = Mock()
+        client.models.generate_content.side_effect = [
+            SimpleNamespace(text="初稿內容"),
+            SimpleNamespace(text="第一次修訂仍無來源標記。"),
+            SimpleNamespace(text="第二次修訂內容 [S01]"),
+        ]
+        source = SourceItem(
+            source_id="S01",
+            category="news",
+            source_name="CNBC",
+            title="Computing industry outlook",
+            url="https://example.com/computing",
+            published="2026-11-23",
+            summary="A report about computing.",
+        )
+
+        report, cited_source_ids = generate_subject_report(
+            client,
+            "quantum computing",
+            date(2026, 11, 23),
+            [source],
+        )
+
+        self.assertEqual(report, "第二次修訂內容 [S01]")
+        self.assertEqual(cited_source_ids, {"S01"})
+        self.assertEqual(client.models.generate_content.call_count, 3)
+        second_repair_prompt = client.models.generate_content.call_args_list[2].kwargs[
+            "contents"
+        ]
+        self.assertIn("上一版草稿沒有任何來源標記", second_repair_prompt)
+        self.assertIn("第一次修訂仍無來源標記。", second_repair_prompt)
+
     def test_repairs_subject_report_without_source_citations(self) -> None:
         client = Mock()
         client.models.generate_content.side_effect = [
@@ -671,7 +708,10 @@ class SubjectReportTests(unittest.TestCase):
 class PodcastSynthesisTests(unittest.TestCase):
     def test_mp3_duration_is_read_from_ffmpeg_metadata(self) -> None:
         completed = SimpleNamespace(
-            stderr="Input #0, mp3, from 'output.mp3':\n  Duration: 00:02:03.45, start: 0.0"
+            stderr=(
+                b"ffmpeg metadata with a non-UTF8 byte \x8a\n"
+                b"Duration: 00:02:03.45, start: 0.0"
+            )
         )
         with (
             patch("podcast.imageio_ffmpeg.get_ffmpeg_exe", return_value="ffmpeg"),

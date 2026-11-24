@@ -47,6 +47,7 @@ TTS_HOST_A_LABEL = "陳知衡"
 GEMINI_RETRY_ATTEMPTS = 5
 GEMINI_RETRY_INITIAL_DELAY = 1.0
 GEMINI_RETRY_MAX_DELAY = 60.0
+GEMINI_CITATION_REPAIR_ATTEMPTS = 3
 GEMINI_PROGRESS_INTERVAL = 30.0
 EPISODE_SECTIONS = (
     ("開場與隔夜市場", "最新美股交易日、主要指數、整體市場情緒與重要變化。"),
@@ -228,7 +229,8 @@ def generate_script_section(
         raise RuntimeError(f"Gemini did not return text for section {section_number}.")
     cited_source_ids = set(re.findall(r"\[(S\d+)\]", text))
     invalid_source_ids = cited_source_ids - source_ids
-    if not cited_source_ids or invalid_source_ids:
+    repair_attempt = 0
+    while not cited_source_ids or invalid_source_ids:
         if invalid_source_ids:
             citation_issue = (
                 "上一版草稿引用了不存在的來源 ID："
@@ -248,6 +250,23 @@ def generate_script_section(
                 "Gemini script section %d has no citations; requesting one revision.",
                 section_number,
             )
+        if repair_attempt >= GEMINI_CITATION_REPAIR_ATTEMPTS:
+            if invalid_source_ids:
+                raise RuntimeError(
+                    f"Gemini cited unknown source IDs in section {section_number} "
+                    f"after {repair_attempt} citation repair attempts: "
+                    + ", ".join(sorted(invalid_source_ids))
+                )
+            raise RuntimeError(
+                f"Gemini returned no source citations for section {section_number} "
+                f"after {repair_attempt} citation repair attempts."
+            )
+        repair_attempt += 1
+        logger.info(
+            "Repairing script section citations (%d/%d).",
+            repair_attempt,
+            GEMINI_CITATION_REPAIR_ATTEMPTS,
+        )
         retry_prompt = f"""{prompt}
 
 {citation_issue}請重新撰寫本段並修正。每項事實至少附上一個可用的來源標記，例如 [S01]；只能使用本提示列出的來源 ID，且標記必須支持對應事實。若資料不支持某項事實，請刪除該事實，不可猜測或補造。只輸出修正後正文。
@@ -265,6 +284,7 @@ def generate_script_section(
                 f"Gemini did not return text for section {section_number}."
             )
         cited_source_ids = set(re.findall(r"\[(S\d+)\]", text))
+        invalid_source_ids = cited_source_ids - source_ids
 
     invalid_source_ids = cited_source_ids - source_ids
     if invalid_source_ids:
@@ -328,7 +348,8 @@ def generate_subject_report(
 
     cited_source_ids = set(re.findall(r"\[(S\d+)\]", text))
     invalid_source_ids = cited_source_ids - source_ids
-    if not cited_source_ids or invalid_source_ids:
+    repair_attempt = 0
+    while not cited_source_ids or invalid_source_ids:
         if invalid_source_ids:
             citation_issue = (
                 "上一版草稿引用了不存在的來源 ID："
@@ -339,6 +360,24 @@ def generate_subject_report(
             )
         else:
             citation_issue = "上一版草稿沒有任何來源標記。"
+        if repair_attempt >= GEMINI_CITATION_REPAIR_ATTEMPTS:
+            if invalid_source_ids:
+                raise RuntimeError(
+                    "Gemini cited unknown source IDs in subject report after "
+                    f"{repair_attempt} citation repair attempts: "
+                    + ", ".join(sorted(invalid_source_ids))
+                )
+            raise RuntimeError(
+                "Gemini returned no source citations for subject report after "
+                f"{repair_attempt} citation repair attempts."
+            )
+
+        repair_attempt += 1
+        logger.warning(
+            "Subject report still has citation issues; requesting repair %d/%d.",
+            repair_attempt,
+            GEMINI_CITATION_REPAIR_ATTEMPTS,
+        )
         retry_prompt = f"""{prompt}
 
 {citation_issue}請重新撰寫並修正。每項事實至少附上一個可用的來源標記，例如 [S01]；
@@ -347,7 +386,9 @@ def generate_subject_report(
 上一版草稿：
 {text}"""
         response = _generate_content(
-            client, "subject report citation repair", retry_prompt
+            client,
+            f"subject report citation repair {repair_attempt}",
+            retry_prompt,
         )
         text = getattr(response, "text", None)
         if not isinstance(text, str) or not text.strip():
@@ -357,15 +398,7 @@ def generate_subject_report(
                 f"No collected sources are relevant to subject {subject!r}."
             )
         cited_source_ids = set(re.findall(r"\[(S\d+)\]", text))
-
-    invalid_source_ids = cited_source_ids - source_ids
-    if invalid_source_ids:
-        raise RuntimeError(
-            "Gemini cited unknown source IDs in subject report: "
-            + ", ".join(sorted(invalid_source_ids))
-        )
-    if not cited_source_ids:
-        raise RuntimeError("Gemini returned no source citations for subject report.")
+        invalid_source_ids = cited_source_ids - source_ids
     return text.strip(), cited_source_ids
 
 
@@ -649,11 +682,10 @@ def _probe_mp3_duration(mp3_path: Path) -> float:
         ],
         check=False,
         capture_output=True,
-        text=True,
     )
     match = re.search(
-        r"Duration:\s*(\d+):(\d{2}):(\d{2}(?:\.\d+)?)",
-        result.stderr,
+        rb"Duration:\s*(\d+):(\d{2}):(\d{2}(?:\.\d+)?)",
+        result.stderr or b"",
     )
     if match is None:
         raise RuntimeError(f"Unable to read MP3 duration from {mp3_path}.")
