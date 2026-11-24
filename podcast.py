@@ -284,9 +284,15 @@ def generate_subject_report(
     subject: str,
     report_date: date,
     sources: list[SourceItem],
+    target_minutes: int = 10,
 ) -> tuple[str, set[str]]:
     if not sources:
         raise RuntimeError(f"No source material is available for subject {subject!r}.")
+    if target_minutes < 1 or target_minutes > 120:
+        raise ValueError("target_minutes must be between 1 and 120.")
+
+    target_characters_min = target_minutes * 220
+    target_characters_max = target_minutes * 280
 
     source_ids = {source.source_id for source in sources}
     source_material = "\n\n".join(
@@ -306,7 +312,8 @@ def generate_subject_report(
 每項事實至少附一個來源標記，例如 [S01]；只能使用下方列出的來源 ID。
 若沒有任何直接相關來源，請只輸出「目前收集到的資料沒有與主題直接相關的來源。」；
 若相關來源不足以支持某項資訊，請明確說明資料有限，不可猜測。
-以自然、清楚的繁體中文撰寫約 1000 至 1500 個中文字，採單一主持人連續獨白，
+以自然、清楚的繁體中文撰寫約 {target_minutes} 分鐘的報告，
+目標字數約 {target_characters_min} 至 {target_characters_max} 個中文字，採單一主持人連續獨白，
 語氣沉穩、理性且具分析感。不要使用主持人姓名標籤、Markdown、網址或條列。
 只輸出報告正文；來源標記會在播音前移除。
 
@@ -632,6 +639,31 @@ def _wave_duration(audio: bytes) -> float:
         return wav_file.getnframes() / wav_file.getframerate()
 
 
+def _probe_mp3_duration(mp3_path: Path) -> float:
+    result = subprocess.run(
+        [
+            imageio_ffmpeg.get_ffmpeg_exe(),
+            "-hide_banner",
+            "-i",
+            str(mp3_path),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    match = re.search(
+        r"Duration:\s*(\d+):(\d{2}):(\d{2}(?:\.\d+)?)",
+        result.stderr,
+    )
+    if match is None:
+        raise RuntimeError(f"Unable to read MP3 duration from {mp3_path}.")
+    hours, minutes, seconds = match.groups()
+    duration = int(hours) * 3600 + int(minutes) * 60 + float(seconds)
+    if duration <= 0:
+        raise RuntimeError(f"MP3 has an invalid duration: {mp3_path}.")
+    return duration
+
+
 def _concat_file_entry(path: Path) -> str:
     escaped_path = str(path.resolve()).replace("\\", "/").replace("'", "'\\''")
     return f"file '{escaped_path}'"
@@ -642,7 +674,8 @@ def convert_wav_chunks_to_mp3(chunks: list[bytes], output_path: Path) -> float:
         raise ValueError("Cannot create an episode without audio.")
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    total_duration = sum(_wave_duration(chunk) for chunk in chunks)
+    for chunk in chunks:
+        _wave_duration(chunk)
     ffmpeg_path = imageio_ffmpeg.get_ffmpeg_exe()
 
     with tempfile.TemporaryDirectory(
@@ -693,7 +726,7 @@ def convert_wav_chunks_to_mp3(chunks: list[bytes], output_path: Path) -> float:
             raise RuntimeError("FFmpeg completed without producing an MP3 file.")
         temporary_mp3.replace(output_path)
 
-    return total_duration
+    return _probe_mp3_duration(output_path)
 
 
 def _create_client() -> Any:
@@ -880,10 +913,16 @@ def create_episode(episode_date: date, output_dir: Path) -> Path:
     return mp3_path
 
 
-def create_subject_report(subject: str, output_dir: Path) -> Path:
+def create_subject_report(
+    subject: str,
+    output_dir: Path,
+    target_minutes: int = 10,
+) -> Path:
     subject = subject.strip()
     if not subject:
         raise ValueError("Subject must not be empty.")
+    if target_minutes < 1 or target_minutes > 120:
+        raise ValueError("target_minutes must be between 1 and 120.")
     safe_subject = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", subject).rstrip(" .")
     if not safe_subject:
         raise ValueError("Subject must contain characters usable in a filename.")
@@ -910,7 +949,7 @@ def create_subject_report(subject: str, output_dir: Path) -> Path:
         )
 
     report, cited_source_ids = generate_subject_report(
-        client, subject, report_date, all_sources
+        client, subject, report_date, all_sources, target_minutes
     )
     normalized_report = normalize_host_labels(report)
     transcript_path = output_dir / f"{report_name}.txt"
@@ -959,6 +998,33 @@ def create_subject_report(subject: str, output_dir: Path) -> Path:
         )
         raise
     duration = convert_wav_chunks_to_mp3([audio], mp3_path)
+    transcript_characters = len(re.sub(r"\s+", "", audio_text))
+    actual_minutes = duration / 60
+    measured_characters_per_minute = transcript_characters / actual_minutes
+    suggested_characters = round(
+        measured_characters_per_minute * target_minutes
+    )
+    duration_difference = actual_minutes - target_minutes
+    duration_report_path = output_dir / f"{report_name}_時長分析.txt"
+    duration_report_path.write_text(
+        f"指定時長：{target_minutes} 分鐘\n"
+        f"實際 MP3 時長：{actual_minutes:.2f} 分鐘（{duration:.1f} 秒）\n"
+        f"與指定時長差異：{duration_difference:+.2f} 分鐘\n"
+        f"送入 TTS 的逐字稿字數（不含空白）：{transcript_characters}\n"
+        f"本次實測語速：{measured_characters_per_minute:.1f} 字／分鐘\n"
+        f"依本次語速推算，下次目標字數：約 {suggested_characters} 字\n"
+        f"推算公式：{transcript_characters} × {target_minutes} ÷ "
+        f"{actual_minutes:.2f} = {suggested_characters}\n",
+        encoding="utf-8",
+    )
+    logger.info(
+        "Subject report duration: target=%.2f min, actual MP3=%.2f min, "
+        "transcript=%d characters, next target≈%d characters",
+        target_minutes,
+        actual_minutes,
+        transcript_characters,
+        suggested_characters,
+    )
     logger.info(
         "Created subject report %s (audio duration %.1f minutes; %d sources)",
         mp3_path,
@@ -1006,6 +1072,14 @@ def _parse_args() -> argparse.Namespace:
         help="Generate a spoken report using collected sources related to TOPIC.",
     )
     parser.add_argument(
+        "--minute",
+        dest="target_minutes",
+        type=int,
+        default=10,
+        metavar="MINUTES",
+        help="Target duration for a subject report (1-120 minutes; default: 10).",
+    )
+    parser.add_argument(
         "--force",
         action="store_true",
         help="Generate even if today is a weekend or Taiwan public holiday (with --once).",
@@ -1021,6 +1095,10 @@ def _parse_args() -> argparse.Namespace:
         parser.error("--subject cannot be combined with --once or --schedule.")
     if args.force and (args.mode != "once" or args.subject is not None):
         parser.error("--force can only be used with --once.")
+    if args.target_minutes < 1 or args.target_minutes > 120:
+        parser.error("--minute must be between 1 and 120.")
+    if args.subject is None and args.target_minutes != 10:
+        parser.error("--minute can only be used with --subject.")
     return args
 
 
@@ -1058,7 +1136,11 @@ def main() -> None:
     )
 
     if args.subject is not None:
-        create_subject_report(args.subject, args.output_dir)
+        create_subject_report(
+            args.subject,
+            args.output_dir,
+            target_minutes=args.target_minutes,
+        )
         return
     if args.mode == "once":
         run_once(args.output_dir, force=args.force)

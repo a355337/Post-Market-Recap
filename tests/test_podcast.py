@@ -31,6 +31,7 @@ from podcast import (
     next_episode_number,
     next_subject_report_number,
     next_run_at_or_after,
+    _probe_mp3_duration,
     synthesize_section,
     confirm_gemini_settings,
 )
@@ -538,6 +539,7 @@ class SubjectReportTests(unittest.TestCase):
             "quantum computing",
             date(2026, 11, 23),
             [source],
+            12,
         )
 
         self.assertEqual(report, "修訂內容 [S01]")
@@ -546,6 +548,8 @@ class SubjectReportTests(unittest.TestCase):
         prompt = client.models.generate_content.call_args_list[0].kwargs["contents"]
         self.assertIn("quantum computing", prompt)
         self.assertIn("依語意判斷", prompt)
+        self.assertIn("約 12 分鐘", prompt)
+        self.assertIn("2640 至 3360 個中文字", prompt)
 
     def test_stops_when_no_sources_are_relevant_to_the_subject(self) -> None:
         client = Mock()
@@ -573,10 +577,14 @@ class SubjectReportTests(unittest.TestCase):
         client.models.generate_content.assert_called_once()
 
     def test_subject_option_parses_without_daily_mode(self) -> None:
-        with patch("sys.argv", ["podcast.py", "--subject", "黃仁勳"]):
+        with patch(
+            "sys.argv",
+            ["podcast.py", "--subject", "黃仁勳", "--minute", "10"],
+        ):
             args = _parse_args()
 
         self.assertEqual(args.subject, "黃仁勳")
+        self.assertEqual(args.target_minutes, 10)
         self.assertIsNone(args.mode)
 
     def test_report_synthesizes_with_existing_tts_and_writes_outputs(self) -> None:
@@ -632,12 +640,21 @@ class SubjectReportTests(unittest.TestCase):
             ).read_text(encoding="utf-8")
             self.assertEqual(tts_transcript, "分析內容\n")
             self.assertNotIn("[S01]", tts_transcript)
+            duration_report = mp3_path.with_name(
+                f"{mp3_path.stem}_時長分析.txt"
+            ).read_text(encoding="utf-8")
+            self.assertIn("指定時長：10 分鐘", duration_report)
+            self.assertIn("實際 MP3 時長：1.00 分鐘（60.0 秒）", duration_report)
+            self.assertIn("送入 TTS 的逐字稿字數（不含空白）：4", duration_report)
+            self.assertIn("本次實測語速：4.0 字／分鐘", duration_report)
+            self.assertIn("下次目標字數：約 40 字", duration_report)
             source_list = mp3_path.with_name(
                 f"{mp3_path.stem}_sources.txt"
             ).read_text(encoding="utf-8")
             self.assertIn("Computing industry outlook", source_list)
             self.assertNotIn("Employment report", source_list)
             generate_report.assert_called_once()
+            self.assertEqual(generate_report.call_args.args[4], 10)
             synthesize.assert_called_once()
             self.assertEqual(
                 synthesize.call_args.args[1],
@@ -652,6 +669,19 @@ class SubjectReportTests(unittest.TestCase):
 
 
 class PodcastSynthesisTests(unittest.TestCase):
+    def test_mp3_duration_is_read_from_ffmpeg_metadata(self) -> None:
+        completed = SimpleNamespace(
+            stderr="Input #0, mp3, from 'output.mp3':\n  Duration: 00:02:03.45, start: 0.0"
+        )
+        with (
+            patch("podcast.imageio_ffmpeg.get_ffmpeg_exe", return_value="ffmpeg"),
+            patch("podcast.subprocess.run", return_value=completed) as run,
+        ):
+            duration = _probe_mp3_duration(Path("output.mp3"))
+
+        self.assertEqual(duration, 123.45)
+        self.assertEqual(run.call_args.args[0][-1], "output.mp3")
+
     def test_uses_single_speaker_config_and_fixed_host_voice_id(self) -> None:
         client = Mock()
         client.interactions.create.return_value = SimpleNamespace(
