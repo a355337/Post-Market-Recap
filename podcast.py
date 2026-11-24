@@ -49,6 +49,8 @@ GEMINI_RETRY_INITIAL_DELAY = 1.0
 GEMINI_RETRY_MAX_DELAY = 60.0
 GEMINI_CITATION_REPAIR_ATTEMPTS = 3
 GEMINI_PROGRESS_INTERVAL = 30.0
+SUBJECT_REPORT_CHARS_PER_MINUTE_MIN = 344
+SUBJECT_REPORT_CHARS_PER_MINUTE_MAX = 380
 EPISODE_SECTIONS = (
     ("開場與隔夜市場", "最新美股交易日、主要指數、整體市場情緒與重要變化。"),
     ("利率與總體經濟", "美國公債殖利率、通膨、就業與近期重要經濟數據。"),
@@ -311,8 +313,8 @@ def generate_subject_report(
     if target_minutes < 1 or target_minutes > 120:
         raise ValueError("target_minutes must be between 1 and 120.")
 
-    target_characters_min = target_minutes * 220
-    target_characters_max = target_minutes * 280
+    target_characters_min = target_minutes * SUBJECT_REPORT_CHARS_PER_MINUTE_MIN
+    target_characters_max = target_minutes * SUBJECT_REPORT_CHARS_PER_MINUTE_MAX
 
     source_ids = {source.source_id for source in sources}
     source_material = "\n\n".join(
@@ -380,7 +382,8 @@ def generate_subject_report(
         )
         retry_prompt = f"""{prompt}
 
-{citation_issue}請重新撰寫並修正。每項事實至少附上一個可用的來源標記，例如 [S01]；
+{citation_issue}請修正引用並維持原稿篇幅，達到上方指定的目標字數範圍；
+不要濃縮或刪除已有來源支持的內容。每項事實至少附上一個可用的來源標記，例如 [S01]；
 只能使用本提示列出的來源 ID。只輸出修正後正文。
 
 上一版草稿：

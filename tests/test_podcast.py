@@ -586,7 +586,11 @@ class SubjectReportTests(unittest.TestCase):
         self.assertIn("quantum computing", prompt)
         self.assertIn("依語意判斷", prompt)
         self.assertIn("約 12 分鐘", prompt)
-        self.assertIn("2640 至 3360 個中文字", prompt)
+        self.assertIn("4128 至 4560 個中文字", prompt)
+        repair_prompt = client.models.generate_content.call_args_list[1].kwargs[
+            "contents"
+        ]
+        self.assertIn("維持原稿篇幅", repair_prompt)
 
     def test_stops_when_no_sources_are_relevant_to_the_subject(self) -> None:
         client = Mock()
