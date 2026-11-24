@@ -44,7 +44,7 @@ class GeminiClientTests(unittest.TestCase):
             confirm_gemini_settings()
 
         input_mock.assert_called_once()
-        self.assertIn("文本模型：gemini-4-hydrogen", output.getvalue())
+        self.assertIn("文本模型：gemini-3.5-flash-lite", output.getvalue())
         self.assertIn("TTS 模型：gemini-3.8-flash-tts", output.getvalue())
         self.assertIn(
             "主持人 Voice ID：voice_x3oo1ycwy9ne",
@@ -504,6 +504,10 @@ class EpisodeCacheTests(unittest.TestCase):
                 mp3_path = create_episode(episode_date, output_dir)
 
             collect_sources.assert_called_once()
+            self.assertEqual(
+                collect_sources.call_args.kwargs["sec_user_agent"],
+                "TaiwanMarketPodcast/1.0 (a355337@gmail.com)",
+            )
             self.assertEqual(generate_script.call_count, 4)
             self.assertEqual(synthesize.call_count, 3)
             self.assertTrue(mp3_path.is_file())

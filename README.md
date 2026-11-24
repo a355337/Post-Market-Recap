@@ -92,7 +92,7 @@ Unregister-ScheduledTask -TaskName TaiwanMarketPodcast -Confirm:$false
 
 逐字稿會在開始 TTS 前寫入 `.txt` 並保留，摘要、來源與逐字稿也會暫存為當日快取；若 TTS 失敗，重新執行會沿用快取，不必重新收集來源或生成逐字稿。整集成功後會刪除快取檔，但不會刪除逐字稿。
 
-預設文字模型為 `gemini-4-hydrogen`，語音模型為 `gemini-3.8-flash-tts`。寫稿會產生單一主持人陳知衡的連續獨白格式；配音使用固定單人 Voice ID（預設 `Kore`），並套用相同的「沉穩、理性且具市場分析感」播報風格，不再啟用 TTS Multi-speaker。可在 `.env` 覆寫 `GEMINI_TEXT_MODEL`、`GEMINI_TTS_MODEL` 與 `GEMINI_TTS_HOST_A_VOICE`。若要啟用 SEC，設定 `SEC_USER_AGENT` 並填入可聯絡的真實 email；若要行情代理報價，設定 [Twelve Data API key](https://twelvedata.com/)，每集會查詢 SPY、QQQ、DIA 三個 ETF。RSS 失敗會記錄警告；所有來源都無法取得時，程式會停止而不讓 Gemini 補猜資料。腳本會記錄實際音訊長度；播讀速度與 Gemini 生成內容會使每集長度略有差異。
+預設文字模型為 `gemini-4-hydrogen`，語音模型為 `gemini-3.8-flash-tts`。寫稿會產生單一主持人陳知衡的連續獨白格式；配音使用固定單人 Voice ID（預設 `Kore`），並套用相同的「沉穩、理性且具市場分析感」播報風格，不再啟用 TTS Multi-speaker。Gemini 模型與 Voice 設定固定於程式；SEC EDGAR User-Agent 固定於 `podcast.py`，並使用 `a355337@gmail.com` 作為聯絡 Email。若要行情代理報價，設定 [Twelve Data API key](https://twelvedata.com/)，每集會查詢 SPY、QQQ、DIA 三個 ETF。RSS 失敗會記錄警告；所有來源都無法取得時，程式會停止而不讓 Gemini 補猜資料。腳本會記錄實際音訊長度；播讀速度與 Gemini 生成內容會使每集長度略有差異。
 
 若要使用持久化的自訂主持人聲音，執行一次 `python create_voice.py` 建立帶有 `voice_...` ID 的 Voice；腳本會把 ID 寫入 `.env`，並將試聽檔保存到 `output/finance_voice_sample.wav`。之後執行 `python create_voice.py --list` 可查詢專案中已保存的自訂 Voice；排程不需要再次建立 Voice，直接重用相同 ID。自訂 Voice 已連續使用才會維持有效期限，刪除專案資源或更換專案時需重新建立並更新 `.env`。
 

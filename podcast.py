@@ -37,9 +37,12 @@ EPISODE_SUMMARY_CHAR_LIMIT = 100
 SPOTIFY_DESCRIPTION_CHAR_LIMIT = 1000
 NO_RELEVANT_SUBJECT_SOURCES = "目前收集到的資料沒有與主題直接相關的來源。"
 # Edit Gemini model and voice settings here.
-GEMINI_TEXT_MODEL = "gemini-4-hydrogen"
+# GEMINI_TEXT_MODEL = "gemini-4-hydrogen"
+GEMINI_TEXT_MODEL = "gemini-3.5-flash-lite"
 GEMINI_TTS_MODEL = "gemini-3.8-flash-tts"
 GEMINI_TTS_HOST_A_VOICE = "voice_x3oo1ycwy9ne"
+# SEC EDGAR requires a descriptive User-Agent with a real contact address.
+SEC_USER_AGENT = "TaiwanMarketPodcast/1.0 (a355337@gmail.com)"
 TTS_HOST_A_LABEL = "陳知衡"
 GEMINI_RETRY_ATTEMPTS = 5
 GEMINI_RETRY_INITIAL_DELAY = 1.0
@@ -314,9 +317,7 @@ def generate_subject_report(
     if not isinstance(text, str) or not text.strip():
         raise RuntimeError("Gemini did not return a subject report.")
     if text.strip() == NO_RELEVANT_SUBJECT_SOURCES:
-        raise RuntimeError(
-            f"No collected sources are relevant to subject {subject!r}."
-        )
+        raise RuntimeError(f"No collected sources are relevant to subject {subject!r}.")
 
     cited_source_ids = set(re.findall(r"\[(S\d+)\]", text))
     invalid_source_ids = cited_source_ids - source_ids
@@ -324,7 +325,9 @@ def generate_subject_report(
         if invalid_source_ids:
             citation_issue = (
                 "上一版草稿引用了不存在的來源 ID："
-                + ", ".join(f"[{source_id}]" for source_id in sorted(invalid_source_ids))
+                + ", ".join(
+                    f"[{source_id}]" for source_id in sorted(invalid_source_ids)
+                )
                 + "。"
             )
         else:
@@ -336,7 +339,9 @@ def generate_subject_report(
 
 上一版草稿：
 {text}"""
-        response = _generate_content(client, "subject report citation repair", retry_prompt)
+        response = _generate_content(
+            client, "subject report citation repair", retry_prompt
+        )
         text = getattr(response, "text", None)
         if not isinstance(text, str) or not text.strip():
             raise RuntimeError("Gemini did not return a subject report.")
@@ -705,7 +710,7 @@ def create_episode(episode_date: date, output_dir: Path) -> Path:
     else:
         transcript_sections = []
         all_sources, source_issues = collect_sources(
-            sec_user_agent=os.getenv("SEC_USER_AGENT", ""),
+            sec_user_agent=SEC_USER_AGENT,
             twelve_data_api_key=os.getenv("TWELVE_DATA_API_KEY", ""),
         )
         for issue in source_issues:
@@ -859,7 +864,7 @@ def create_subject_report(subject: str, output_dir: Path) -> Path:
 
     client = _create_client()
     all_sources, source_issues = collect_sources(
-        sec_user_agent=os.getenv("SEC_USER_AGENT", ""),
+        sec_user_agent=SEC_USER_AGENT,
         twelve_data_api_key=os.getenv("TWELVE_DATA_API_KEY", ""),
         subject=subject,
     )
