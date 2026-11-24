@@ -29,6 +29,7 @@ from podcast import (
     is_taiwan_workday,
     load_recent_episode_context,
     next_episode_number,
+    next_subject_report_number,
     next_run_at_or_after,
     synthesize_section,
     confirm_gemini_settings,
@@ -621,11 +622,16 @@ class SubjectReportTests(unittest.TestCase):
             ):
                 mp3_path = create_subject_report("量子運算", output_dir)
 
-            self.assertTrue(mp3_path.name.startswith("主題報告｜量子運算｜"))
+            self.assertTrue(mp3_path.name.startswith("主題報告EP1｜量子運算｜"))
             self.assertTrue(mp3_path.is_file())
             transcript = mp3_path.with_suffix(".txt").read_text(encoding="utf-8")
             self.assertIn("分析內容 [S01]", transcript)
             self.assertIn("主題報告｜量子運算｜", transcript)
+            tts_transcript = mp3_path.with_name(
+                f"{mp3_path.stem}_TTS逐字稿.txt"
+            ).read_text(encoding="utf-8")
+            self.assertEqual(tts_transcript, "分析內容\n")
+            self.assertNotIn("[S01]", tts_transcript)
             source_list = mp3_path.with_name(
                 f"{mp3_path.stem}_sources.txt"
             ).read_text(encoding="utf-8")
@@ -775,6 +781,18 @@ class EpisodeNamingTests(unittest.TestCase):
             (output_dir / "美股財經Podcast_20261120.mp3").touch()
 
             self.assertEqual(next_episode_number(output_dir), 8)
+
+    def test_subject_report_number_increments_for_same_subject(self) -> None:
+        with TemporaryDirectory() as directory:
+            output_dir = Path(directory)
+            (output_dir / "主題報告EP2｜量子運算｜20261120.mp3").touch()
+            (output_dir / "主題報告｜量子運算｜20261119.mp3").touch()
+            (output_dir / "主題報告EP5｜其他主題｜20261120.mp3").touch()
+
+            self.assertEqual(
+                next_subject_report_number(output_dir, "量子運算"),
+                3,
+            )
 
     def test_mp3_path_uses_windows_safe_fullwidth_separator(self) -> None:
         path = build_episode_mp3_path(Path("output"), 3, "科技股震盪")

@@ -436,6 +436,25 @@ def next_episode_number(output_dir: Path) -> int:
     return max(episode_numbers, default=0) + 1
 
 
+def next_subject_report_number(output_dir: Path, safe_subject: str) -> int:
+    escaped_subject = re.escape(safe_subject)
+    numbered_pattern = re.compile(
+        rf"^主題報告EP(\d+)｜{escaped_subject}｜\d{{8}}\.mp3$",
+        re.UNICODE,
+    )
+    legacy_pattern = re.compile(
+        rf"^主題報告｜{escaped_subject}｜\d{{8}}\.mp3$",
+        re.UNICODE,
+    )
+    report_numbers = [
+        int(match.group(1))
+        for path in output_dir.glob("主題報告*.mp3")
+        if (match := numbered_pattern.match(path.name))
+    ]
+    legacy_count = sum(1 for path in output_dir.glob("主題報告*.mp3") if legacy_pattern.match(path.name))
+    return max([*report_numbers, legacy_count], default=0) + 1
+
+
 def build_episode_mp3_path(output_dir: Path, episode_number: int, summary: str) -> Path:
     if episode_number < 1:
         raise ValueError("episode_number must be positive.")
@@ -553,6 +572,12 @@ def normalize_host_labels(text: str) -> str:
         host_prefix.sub("", line, count=1) if host_prefix.match(line) else line
         for line in text.splitlines()
     )
+
+
+def prepare_tts_text(text: str) -> str:
+    """Return the clean text sent to Gemini TTS."""
+    normalized = normalize_host_labels(text)
+    return re.sub(r"\s*\[S\d+\]", "", normalized).strip()
 
 
 def synthesize_section(client: Any, text: str) -> bytes:
@@ -768,19 +793,26 @@ def create_episode(episode_date: date, output_dir: Path) -> Path:
         encoding="utf-8",
     )
 
-    split_point = (len(transcript_sections) + 1) // 2
+    clean_tts_sections = [prepare_tts_text(text) for text in transcript_sections]
+    tts_transcript_path = output_dir / f"{mp3_path.stem}_TTS逐字稿.txt"
+    tts_transcript_path.write_text(
+        "\n\n".join(section for section in clean_tts_sections if section) + "\n",
+        encoding="utf-8",
+    )
+
+    split_point = (len(clean_tts_sections) + 1) // 2
     tts_batches = [
         batch
         for batch in (
-            transcript_sections[:split_point],
-            transcript_sections[split_point:],
+            clean_tts_sections[:split_point],
+            clean_tts_sections[split_point:],
         )
         if batch
     ]
     audio_chunks: list[bytes] = []
     for batch_number, sections in enumerate(tts_batches, start=1):
         logger.info("Synthesizing TTS batch %d/%d", batch_number, len(tts_batches))
-        audio_text = "\n\n".join(re.sub(r"\s*\[S\d+\]", "", text) for text in sections)
+        audio_text = "\n\n".join(sections)
         started_at = time.monotonic()
         try:
             audio = _run_with_progress_logging(
@@ -857,10 +889,11 @@ def create_subject_report(subject: str, output_dir: Path) -> Path:
         raise ValueError("Subject must contain characters usable in a filename.")
 
     report_date = datetime.now(TAIPEI).date()
-    report_name = f"主題報告｜{safe_subject}｜{report_date:%Y%m%d}"
+    report_number = next_subject_report_number(output_dir, safe_subject)
+    report_name = (
+        f"主題報告EP{report_number}｜{safe_subject}｜{report_date:%Y%m%d}"
+    )
     mp3_path = output_dir / f"{report_name}.mp3"
-    if mp3_path.exists():
-        raise FileExistsError(f"Subject report MP3 already exists: {mp3_path}")
 
     client = _create_client()
     all_sources, source_issues = collect_sources(
@@ -904,7 +937,9 @@ def create_subject_report(subject: str, output_dir: Path) -> Path:
         encoding="utf-8",
     )
 
-    audio_text = re.sub(r"\s*\[S\d+\]", "", normalized_report)
+    audio_text = prepare_tts_text(normalized_report)
+    tts_transcript_path = output_dir / f"{report_name}_TTS逐字稿.txt"
+    tts_transcript_path.write_text(audio_text + "\n", encoding="utf-8")
     started_at = time.monotonic()
     try:
         audio = _run_with_progress_logging(
