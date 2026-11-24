@@ -14,19 +14,19 @@ import time
 import wave
 from collections.abc import Callable
 from dataclasses import asdict
-from datetime import date, datetime, time as clock_time, timedelta
+from datetime import date, datetime, timedelta
+from datetime import time as clock_time
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
 import holidays
+import imageio_ffmpeg
 from dotenv import load_dotenv
 from google import genai
 from google.genai.errors import APIError
-import imageio_ffmpeg
 
 from news_sources import SourceItem, collect_sources, select_sources
-
 
 BASE_DIR = Path(__file__).resolve().parent
 DEFAULT_OUTPUT_DIR = BASE_DIR / "output"
@@ -37,7 +37,7 @@ EPISODE_SUMMARY_CHAR_LIMIT = 100
 SPOTIFY_DESCRIPTION_CHAR_LIMIT = 1000
 TEXT_MODEL_DEFAULT = "gemini-4-hydrogen"
 TTS_MODEL_DEFAULT = "gemini-3.8-flash-tts"
-TTS_HOST_A_DEFAULT = "Kore"
+TTS_HOST_A_DEFAULT = "voice_x3oo1ycwy9ne"
 TTS_HOST_A_LABEL = "陳知衡"
 GEMINI_RETRY_ATTEMPTS = 5
 GEMINI_RETRY_INITIAL_DELAY = 1.0
@@ -141,7 +141,9 @@ def load_recent_episode_context(output_dir: Path, episode_date: date) -> str:
                 transcripts.append((transcript_date, path))
 
     context_parts: list[str] = []
-    for transcript_date, path in sorted(transcripts, reverse=True)[:RECENT_EPISODE_LIMIT]:
+    for transcript_date, path in sorted(transcripts, reverse=True)[
+        :RECENT_EPISODE_LIMIT
+    ]:
         transcript = path.read_text(encoding="utf-8").strip()
         if len(transcript) > RECENT_SCRIPT_CHAR_LIMIT:
             excerpt_length = RECENT_SCRIPT_CHAR_LIMIT // 2
@@ -166,7 +168,9 @@ def generate_script_section(
     recent_episode_context: str = "",
 ) -> tuple[str, set[str]]:
     if not sources:
-        raise RuntimeError(f"No source material is available for section {section_number}.")
+        raise RuntimeError(
+            f"No source material is available for section {section_number}."
+        )
 
     source_ids = {source.source_id for source in sources}
     source_material = "\n\n".join(
@@ -213,9 +217,7 @@ def generate_script_section(
 可用來源資料：
 {source_material}"""
 
-    response = _generate_content(
-        client, f"script section {section_number}", prompt
-    )
+    response = _generate_content(client, f"script section {section_number}", prompt)
     text = getattr(response, "text", None)
     if not isinstance(text, str) or not text.strip():
         raise RuntimeError(f"Gemini did not return text for section {section_number}.")
@@ -225,7 +227,9 @@ def generate_script_section(
         if invalid_source_ids:
             citation_issue = (
                 "上一版草稿引用了不存在的來源 ID："
-                + ", ".join(f"[{source_id}]" for source_id in sorted(invalid_source_ids))
+                + ", ".join(
+                    f"[{source_id}]" for source_id in sorted(invalid_source_ids)
+                )
                 + "。"
             )
             logger.warning(
@@ -292,7 +296,9 @@ def generate_episode_summary(client: Any, sections: list[str]) -> str:
         )
         summary = summary[:EPISODE_SUMMARY_CHAR_LIMIT]
     if re.search(r'[<>:"/\\|?*\x00-\x1f]', summary):
-        raise RuntimeError("Gemini episode summary contains invalid filename characters.")
+        raise RuntimeError(
+            "Gemini episode summary contains invalid filename characters."
+        )
     return summary
 
 
@@ -310,8 +316,7 @@ def generate_spotify_description(client: Any, sections: list[str]) -> str:
     description = text.strip().strip("「」『』《》〈〉“”\"'`").strip()
     if not description:
         raise RuntimeError(
-            "Gemini Spotify description must contain 1-1000 characters; "
-            "received 0."
+            "Gemini Spotify description must contain 1-1000 characters; " "received 0."
         )
     if len(description) > SPOTIFY_DESCRIPTION_CHAR_LIMIT:
         logger.warning(
@@ -326,7 +331,10 @@ def generate_spotify_description(client: Any, sections: list[str]) -> str:
         if sentence_end >= 40:
             description = within_limit[: sentence_end + 1].rstrip()
         else:
-            description = description[:SPOTIFY_DESCRIPTION_CHAR_LIMIT - 1].rstrip("，、；：,;: ") + "…"
+            description = (
+                description[: SPOTIFY_DESCRIPTION_CHAR_LIMIT - 1].rstrip("，、；：,;: ")
+                + "…"
+            )
     return description
 
 
@@ -340,9 +348,7 @@ def next_episode_number(output_dir: Path) -> int:
     return max(episode_numbers, default=0) + 1
 
 
-def build_episode_mp3_path(
-    output_dir: Path, episode_number: int, summary: str
-) -> Path:
+def build_episode_mp3_path(output_dir: Path, episode_number: int, summary: str) -> Path:
     if episode_number < 1:
         raise ValueError("episode_number must be positive.")
     if not summary:
@@ -505,7 +511,9 @@ def synthesize_section(client: Any, text: str) -> bytes:
 def _wave_duration(audio: bytes) -> float:
     with wave.open(io.BytesIO(audio), "rb") as wav_file:
         if wav_file.getcomptype() != "NONE":
-            raise ValueError("Gemini returned a compressed WAV stream that cannot be concatenated.")
+            raise ValueError(
+                "Gemini returned a compressed WAV stream that cannot be concatenated."
+            )
         if wav_file.getframerate() <= 0:
             raise ValueError("Gemini returned WAV audio with an invalid sample rate.")
         return wav_file.getnframes() / wav_file.getframerate()
@@ -684,9 +692,7 @@ def create_episode(episode_date: date, output_dir: Path) -> Path:
     audio_chunks: list[bytes] = []
     for batch_number, sections in enumerate(tts_batches, start=1):
         logger.info("Synthesizing TTS batch %d/%d", batch_number, len(tts_batches))
-        audio_text = "\n\n".join(
-            re.sub(r"\s*\[S\d+\]", "", text) for text in sections
-        )
+        audio_text = "\n\n".join(re.sub(r"\s*\[S\d+\]", "", text) for text in sections)
         started_at = time.monotonic()
         try:
             audio = _run_with_progress_logging(
@@ -773,7 +779,9 @@ def run_scheduler(output_dir: Path) -> None:
             try:
                 run_once(output_dir)
             except (APIError, OSError, RuntimeError, ValueError):
-                logger.exception("Podcast generation failed; scheduler will retry tomorrow.")
+                logger.exception(
+                    "Podcast generation failed; scheduler will retry tomorrow."
+                )
 
 
 def _parse_args() -> argparse.Namespace:
