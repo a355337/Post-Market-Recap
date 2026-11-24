@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import unittest
+import urllib.parse
 
 from news_sources import SEC_8K_FEED, collect_sources, parse_feed, select_sources
 
@@ -105,6 +106,37 @@ class SourceCollectionTests(unittest.TestCase):
         self.assertTrue(any("SEC EDGAR skipped" in issue for issue in issues))
         self.assertNotIn(SEC_8K_FEED, requested_urls)
         self.assertTrue(all(source.source_id for source in sources))
+
+    def test_subject_search_uses_the_supplied_topic_and_assigns_unique_ids(self) -> None:
+        subject = "quantum computing"
+        requested_topics: list[str] = []
+        feed_payload = (
+            b"<rss><channel><item><title>Quantum computing update</title>"
+            b"<link>https://example.com/quantum</link></item></channel></rss>"
+        )
+
+        def requester(url: str, user_agent: str) -> bytes:
+            if url.startswith("https://news.google.com/rss/search?"):
+                query = urllib.parse.parse_qs(urllib.parse.urlsplit(url).query)
+                requested_topics.append(query["q"][0])
+                return feed_payload
+            if "cnbc.com" in url:
+                return (
+                    b"<rss><channel><item><title>Market update</title>"
+                    b"<link>https://example.com/market</link></item></channel></rss>"
+                )
+            return b"<rss><channel></channel></rss>"
+
+        sources, _ = collect_sources(subject=subject, requester=requester)
+
+        topic_sources = [
+            source for source in sources
+            if source.source_name == "Google News topic search"
+        ]
+        self.assertEqual(requested_topics, [subject])
+        self.assertEqual(len(topic_sources), 1)
+        self.assertEqual(topic_sources[0].title, "Quantum computing update")
+        self.assertEqual(len({source.source_id for source in sources}), len(sources))
 
 
 if __name__ == "__main__":

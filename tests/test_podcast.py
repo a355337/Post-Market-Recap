@@ -14,11 +14,14 @@ import holidays
 from news_sources import SourceItem
 from podcast import (
     TAIPEI,
+    _parse_args,
     _create_client,
     _generate_content,
     _run_with_progress_logging,
     build_episode_mp3_path,
     create_episode,
+    create_subject_report,
+    generate_subject_report,
     generate_script_section,
     generate_episode_summary,
     generate_spotify_description,
@@ -481,6 +484,136 @@ class EpisodeCacheTests(unittest.TestCase):
             self.assertTrue(mp3_path.is_file())
             self.assertFalse(cache_path.exists())
             self.assertTrue(transcript_path.is_file())
+
+
+class SubjectReportTests(unittest.TestCase):
+    def test_repairs_subject_report_without_source_citations(self) -> None:
+        client = Mock()
+        client.models.generate_content.side_effect = [
+            SimpleNamespace(text="初稿內容"),
+            SimpleNamespace(text="修訂內容 [S01]"),
+        ]
+        source = SourceItem(
+            source_id="S01",
+            category="news",
+            source_name="CNBC",
+            title="Computing industry outlook",
+            url="https://example.com/computing",
+            published="2026-11-23",
+            summary="A report about computing.",
+        )
+
+        report, cited_source_ids = generate_subject_report(
+            client,
+            "quantum computing",
+            date(2026, 11, 23),
+            [source],
+        )
+
+        self.assertEqual(report, "修訂內容 [S01]")
+        self.assertEqual(cited_source_ids, {"S01"})
+        self.assertEqual(client.models.generate_content.call_count, 2)
+        prompt = client.models.generate_content.call_args_list[0].kwargs["contents"]
+        self.assertIn("quantum computing", prompt)
+        self.assertIn("依語意判斷", prompt)
+
+    def test_stops_when_no_sources_are_relevant_to_the_subject(self) -> None:
+        client = Mock()
+        client.models.generate_content.return_value = SimpleNamespace(
+            text="目前收集到的資料沒有與主題直接相關的來源。"
+        )
+        source = SourceItem(
+            source_id="S01",
+            category="news",
+            source_name="CNBC",
+            title="Computing industry outlook",
+            url="https://example.com/computing",
+            published="2026-11-23",
+            summary="A report about computing.",
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "No collected sources are relevant"):
+            generate_subject_report(
+                client,
+                "ocean exploration",
+                date(2026, 11, 23),
+                [source],
+            )
+
+        client.models.generate_content.assert_called_once()
+
+    def test_subject_option_parses_without_daily_mode(self) -> None:
+        with patch("sys.argv", ["podcast.py", "--subject", "黃仁勳"]):
+            args = _parse_args()
+
+        self.assertEqual(args.subject, "黃仁勳")
+        self.assertIsNone(args.mode)
+
+    def test_report_synthesizes_with_existing_tts_and_writes_outputs(self) -> None:
+        relevant = SourceItem(
+            source_id="S01",
+            category="news",
+            source_name="CNBC",
+            title="Computing industry outlook",
+            url="https://example.com/computing",
+            published="2026-11-23",
+            summary="A report about computing.",
+        )
+        unrelated = SourceItem(
+            source_id="S02",
+            category="economics",
+            source_name="BLS",
+            title="Employment report",
+            url="https://example.com/jobs",
+            published="2026-11-23",
+            summary="Employment data.",
+        )
+
+        def create_mp3(audio_chunks: list[bytes], output_path: Path) -> float:
+            self.assertEqual(audio_chunks, [b"wav"])
+            output_path.write_bytes(b"mp3")
+            return 60.0
+
+        with TemporaryDirectory() as directory:
+            output_dir = Path(directory)
+            client = Mock()
+            with (
+                patch("podcast._create_client", return_value=client),
+                patch(
+                    "podcast.collect_sources",
+                    return_value=([relevant, unrelated], []),
+                ),
+                patch(
+                    "podcast.generate_subject_report",
+                    return_value=("分析內容 [S01]", {"S01"}),
+                ) as generate_report,
+                patch("podcast.synthesize_section", return_value=b"wav") as synthesize,
+                patch("podcast.convert_wav_chunks_to_mp3", side_effect=create_mp3),
+            ):
+                mp3_path = create_subject_report("量子運算", output_dir)
+
+            self.assertTrue(mp3_path.name.startswith("主題報告｜量子運算｜"))
+            self.assertTrue(mp3_path.is_file())
+            transcript = mp3_path.with_suffix(".txt").read_text(encoding="utf-8")
+            self.assertIn("分析內容 [S01]", transcript)
+            self.assertIn("主題報告｜量子運算｜", transcript)
+            source_list = mp3_path.with_name(
+                f"{mp3_path.stem}_sources.txt"
+            ).read_text(encoding="utf-8")
+            self.assertIn("Computing industry outlook", source_list)
+            self.assertNotIn("Employment report", source_list)
+            generate_report.assert_called_once()
+            synthesize.assert_called_once()
+            self.assertEqual(
+                synthesize.call_args.args[1],
+                "分析內容",
+            )
+            generate_report.assert_called_once()
+            self.assertEqual(generate_report.call_args.args[1], "量子運算")
+            self.assertEqual(
+                generate_report.call_args.args[3],
+                [relevant, unrelated],
+            )
 
 
 class PodcastSynthesisTests(unittest.TestCase):

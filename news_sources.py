@@ -16,6 +16,7 @@ SEC_8K_FEED = (
     "?action=getcurrent&CIK=&type=8-K&company=&dateb=&owner=include&count=20&output=atom"
 )
 TWELVE_DATA_QUOTE_URL = "https://api.twelvedata.com/quote"
+GOOGLE_NEWS_SEARCH_URL = "https://news.google.com/rss/search"
 RSS_FEEDS = (
     (
         "CNBC US Top News",
@@ -178,6 +179,7 @@ def collect_sources(
     sec_user_agent: str = "",
     twelve_data_api_key: str = "",
     requester: FetchBytes = fetch_bytes,
+    subject: str = "",
 ) -> tuple[list[SourceItem], list[str]]:
     collected: list[SourceItem] = []
     issues: list[str] = []
@@ -187,6 +189,28 @@ def collect_sources(
             collected.extend(parse_feed(requester(url, USER_AGENT), source_name, category))
         except (OSError, TimeoutError, ValueError, ET.ParseError) as error:
             issues.append(f"{source_name}: {type(error).__name__}: {error}")
+
+    if subject:
+        search_query = urllib.parse.urlencode(
+            {
+                "q": subject,
+                "hl": "zh-TW",
+                "gl": "TW",
+                "ceid": "TW:zh-Hant",
+            }
+        )
+        try:
+            collected.extend(
+                parse_feed(
+                    requester(f"{GOOGLE_NEWS_SEARCH_URL}?{search_query}", USER_AGENT),
+                    "Google News topic search",
+                    "news",
+                )
+            )
+        except (OSError, TimeoutError, ValueError, ET.ParseError) as error:
+            issues.append(
+                f"Google News topic search: {type(error).__name__}: {error}"
+            )
 
     sec_agent_lower = sec_user_agent.lower()
     has_real_sec_contact = (
