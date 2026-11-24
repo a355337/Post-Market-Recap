@@ -479,17 +479,21 @@ def synthesize_section(client: Any, text: str) -> bytes:
                     {
                         "type": "text",
                         "text": text,
+                        "annotations": [
+                            {
+                                "type": "speech_metadata",
+                                "style": "沉穩、理性且具市場分析感的資深財經主播，語速平穩",
+                            }
+                        ],
                     }
                 ],
             }
         ],
         response_format={"type": "audio"},
         generation_config={
-            "speech_config": {
-                "voice_config": {
-                    "prebuilt_voice_config": {"voice_name": host_voice}
-                }
-            }
+            "speech_config": [
+                {"voice": host_voice},
+            ]
         },
     )
     audio = getattr(getattr(response, "output_audio", None), "data", None)

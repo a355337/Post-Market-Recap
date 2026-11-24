@@ -509,14 +509,17 @@ class PodcastSynthesisTests(unittest.TestCase):
         self.assertEqual(call["model"], "gemini-3.8-flash-tts")
         speech_config = call["generation_config"]["speech_config"]
         self.assertEqual(
-            speech_config["voice_config"]["prebuilt_voice_config"]["voice_name"],
-            "Kore",
+            speech_config,
+            [{"voice": "Kore"}],
         )
         input_text = call["input"][0]["content"][0]["text"]
         self.assertEqual(
             input_text,
             "市場今天震盪。\n我們接著看原因。",
         )
+        speech_metadata = call["input"][0]["content"][0]["annotations"][0]
+        self.assertEqual(speech_metadata["type"], "speech_metadata")
+        self.assertIn("沉穩", speech_metadata["style"])
 
     def test_logs_environment_overrides_before_tts_request(self) -> None:
         client = Mock()
