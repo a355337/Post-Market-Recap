@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import io
 import time as time_module
 import unittest
 from datetime import date, datetime, time, timedelta
@@ -30,10 +31,34 @@ from podcast import (
     next_episode_number,
     next_run_at_or_after,
     synthesize_section,
+    confirm_gemini_settings,
 )
 
 
 class GeminiClientTests(unittest.TestCase):
+    def test_confirm_gemini_settings_waits_for_enter(self) -> None:
+        with (
+            patch("builtins.input", return_value="") as input_mock,
+            patch("sys.stdout", new_callable=io.StringIO) as output,
+        ):
+            confirm_gemini_settings()
+
+        input_mock.assert_called_once()
+        self.assertIn("文本模型：gemini-4-hydrogen", output.getvalue())
+        self.assertIn("TTS 模型：gemini-3.8-flash-tts", output.getvalue())
+        self.assertIn(
+            "主持人 Voice ID：voice_x3oo1ycwy9ne",
+            output.getvalue(),
+        )
+
+    def test_confirm_gemini_settings_cancels_on_other_input(self) -> None:
+        with (
+            patch("builtins.input", return_value="取消"),
+            patch("sys.stdout", new_callable=io.StringIO),
+            self.assertRaisesRegex(SystemExit, "已取消啟動"),
+        ):
+            confirm_gemini_settings()
+
     def test_logs_gemini_request_start_and_completion(self) -> None:
         client = Mock()
         client.models.generate_content.return_value = SimpleNamespace(text="ok")
@@ -634,7 +659,7 @@ class PodcastSynthesisTests(unittest.TestCase):
             any(
                 "TTS request starting: model=gemini-3.8-flash-tts"
                 in line
-                and "host_voice=Kore" in line
+                and "host_voice=voice_x3oo1ycwy9ne" in line
                 for line in captured.output
             )
         )
@@ -643,7 +668,7 @@ class PodcastSynthesisTests(unittest.TestCase):
         speech_config = call["generation_config"]["speech_config"]
         self.assertEqual(
             speech_config,
-            [{"voice": "Kore"}],
+            [{"voice": "voice_x3oo1ycwy9ne"}],
         )
         input_text = call["input"][0]["content"][0]["text"]
         self.assertEqual(
@@ -654,35 +679,26 @@ class PodcastSynthesisTests(unittest.TestCase):
         self.assertEqual(speech_metadata["type"], "speech_metadata")
         self.assertIn("沉穩", speech_metadata["style"])
 
-    def test_logs_environment_overrides_before_tts_request(self) -> None:
+    def test_logs_fixed_tts_settings_before_request(self) -> None:
         client = Mock()
         client.interactions.create.return_value = SimpleNamespace(
             output_audio=SimpleNamespace(data=base64.b64encode(b"audio").decode())
         )
 
-        with (
-            patch.dict(
-                "os.environ",
-                {
-                    "GEMINI_TTS_MODEL": "gemini-test-tts",
-                    "GEMINI_TTS_HOST_A_VOICE": "Zephyr",
-                },
-            ),
-            self.assertLogs("market_podcast", level="INFO") as captured,
-        ):
+        with self.assertLogs("market_podcast", level="INFO") as captured:
             synthesize_section(client, "主持人甲：測試。\n主持人乙：確認。")
 
         self.assertTrue(
             any(
-                "TTS request starting: model=gemini-test-tts"
+                "TTS request starting: model=gemini-3.8-flash-tts"
                 in line
-                and "host_voice=Zephyr" in line
+                and "host_voice=voice_x3oo1ycwy9ne" in line
                 for line in captured.output
             )
         )
         self.assertEqual(
             client.interactions.create.call_args.kwargs["model"],
-            "gemini-test-tts",
+            "gemini-3.8-flash-tts",
         )
 
 

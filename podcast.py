@@ -36,9 +36,10 @@ RECENT_SCRIPT_CHAR_LIMIT = 2500
 EPISODE_SUMMARY_CHAR_LIMIT = 100
 SPOTIFY_DESCRIPTION_CHAR_LIMIT = 1000
 NO_RELEVANT_SUBJECT_SOURCES = "目前收集到的資料沒有與主題直接相關的來源。"
-TEXT_MODEL_DEFAULT = "gemini-4-hydrogen"
-TTS_MODEL_DEFAULT = "gemini-3.8-flash-tts"
-TTS_HOST_A_DEFAULT = "voice_x3oo1ycwy9ne"
+# Edit Gemini model and voice settings here.
+GEMINI_TEXT_MODEL = "gemini-4-hydrogen"
+GEMINI_TTS_MODEL = "gemini-3.8-flash-tts"
+GEMINI_TTS_HOST_A_VOICE = "voice_x3oo1ycwy9ne"
 TTS_HOST_A_LABEL = "陳知衡"
 GEMINI_RETRY_ATTEMPTS = 5
 GEMINI_RETRY_INITIAL_DELAY = 1.0
@@ -82,7 +83,7 @@ def _run_with_progress_logging(operation: str, request: Callable[[], Any]) -> An
 
 
 def _generate_content(client: Any, operation: str, prompt: str) -> Any:
-    model = os.getenv("GEMINI_TEXT_MODEL", TEXT_MODEL_DEFAULT)
+    model = GEMINI_TEXT_MODEL
     started_at = time.monotonic()
     logger.info("Gemini request started: %s (model=%s)", operation, model)
     try:
@@ -551,8 +552,8 @@ def normalize_host_labels(text: str) -> str:
 
 def synthesize_section(client: Any, text: str) -> bytes:
     text = normalize_host_labels(text)
-    host_voice = os.getenv("GEMINI_TTS_HOST_A_VOICE", TTS_HOST_A_DEFAULT)
-    tts_model = os.getenv("GEMINI_TTS_MODEL", TTS_MODEL_DEFAULT)
+    host_voice = GEMINI_TTS_HOST_A_VOICE
+    tts_model = GEMINI_TTS_MODEL
     logger.info(
         "TTS request starting: model=%s, host_voice=%s",
         tts_model,
@@ -983,7 +984,18 @@ def _parse_args() -> argparse.Namespace:
     return args
 
 
+def confirm_gemini_settings() -> None:
+    print("請確認以下 Gemini 設定（修改請先到 podcast.py 頂部的設定區）：")
+    print(f"  文本模型：{GEMINI_TEXT_MODEL}")
+    print(f"  TTS 模型：{GEMINI_TTS_MODEL}")
+    print(f"  主持人 Voice ID：{GEMINI_TTS_HOST_A_VOICE}")
+    response = input("確認無誤請按 Enter；輸入其他內容則取消啟動：").strip()
+    if response:
+        raise SystemExit("已取消啟動。請先確認 podcast.py 頂部的 Gemini 設定。")
+
+
 def main() -> None:
+    confirm_gemini_settings()
     args = _parse_args()
     if args.mode is None and args.subject is None:
         args.mode = "schedule"

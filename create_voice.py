@@ -12,7 +12,6 @@ from google import genai
 BASE_DIR = Path(__file__).resolve().parent
 ENV_PATH = BASE_DIR / ".env"
 SAMPLE_PATH = BASE_DIR / "output" / "finance_voice_sample.wav"
-VOICE_ENV_NAME = "GEMINI_TTS_HOST_A_VOICE"
 
 
 def create_client() -> genai.Client:
@@ -23,26 +22,6 @@ def create_client() -> genai.Client:
         api_key=api_key,
         http_options={"api_version": "v1beta"},
     )
-
-
-def update_env_voice_id(voice_id: str) -> None:
-    lines = ENV_PATH.read_text(encoding="utf-8").splitlines() if ENV_PATH.exists() else []
-    updated = False
-    next_lines: list[str] = []
-
-    for line in lines:
-        if line.startswith(f"{VOICE_ENV_NAME}="):
-            next_lines.append(f"{VOICE_ENV_NAME}={voice_id}")
-            updated = True
-        else:
-            next_lines.append(line)
-
-    if not updated:
-        if next_lines and next_lines[-1].strip():
-            next_lines.append("")
-        next_lines.append(f"{VOICE_ENV_NAME}={voice_id}")
-
-    ENV_PATH.write_text("\n".join(next_lines).rstrip() + "\n", encoding="utf-8")
 
 
 def list_voices(client: genai.Client) -> None:
@@ -85,9 +64,8 @@ def create_voice(client: genai.Client) -> str:
         SAMPLE_PATH.write_bytes(base64.b64decode(sample_data, validate=True))
         print(f"Sample saved: {SAMPLE_PATH}")
 
-    update_env_voice_id(voice_id)
     print(f"Voice created and saved: {voice_id}")
-    print(f"Updated: {ENV_PATH}")
+    print("Copy this voice ID to GEMINI_TTS_HOST_A_VOICE in podcast.py.")
     return voice_id
 
 

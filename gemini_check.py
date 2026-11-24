@@ -10,9 +10,7 @@ from google import genai
 from google.genai.errors import APIError
 
 BASE_DIR = Path(__file__).resolve().parent
-DEFAULT_MODEL = "gemini-4-hydrogen"  # X
-# DEFAULT_MODEL = "gemini-3.1-flash-lite"  # X
-# DEFAULT_MODEL = "gemini-2.5-flash-lite"  # X
+DEFAULT_MODEL = "gemini-4-hydrogen"
 
 
 def main() -> int:
@@ -25,7 +23,6 @@ def main() -> int:
         )
         return 2
 
-    # model = os.getenv("GEMINI_TEXT_MODEL", DEFAULT_MODEL)
     model = DEFAULT_MODEL
     client = genai.Client(api_key=api_key, http_options={"api_version": "v1beta"})
     text_ok = False
