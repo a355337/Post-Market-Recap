@@ -636,7 +636,7 @@ class SubjectReportTests(unittest.TestCase):
         self.assertIn("quantum computing", prompt)
         self.assertIn("依語意判斷", prompt)
         self.assertIn("約 12 分鐘", prompt)
-        self.assertIn("4128 至 4560 個中文字", prompt)
+        self.assertIn("8256 至 9120 個中文字", prompt)
         repair_prompt = client.text_model.generate_content.call_args_list[1].kwargs[
             "contents"
         ]
@@ -678,6 +678,15 @@ class SubjectReportTests(unittest.TestCase):
         self.assertEqual(args.target_minutes, 10)
         self.assertTrue(args.yes)
         self.assertIsNone(args.mode)
+
+    def test_subject_option_defaults_to_30_minutes(self) -> None:
+        with patch(
+            "sys.argv",
+            ["podcast.py", "--subject", "黃仁勳", "--yes"],
+        ):
+            args = _parse_args()
+
+        self.assertEqual(args.target_minutes, 30)
 
     def test_report_synthesizes_with_existing_tts_and_writes_outputs(self) -> None:
         relevant = SourceItem(
@@ -735,18 +744,18 @@ class SubjectReportTests(unittest.TestCase):
             duration_report = mp3_path.with_name(
                 f"{mp3_path.stem}_時長分析.txt"
             ).read_text(encoding="utf-8")
-            self.assertIn("指定時長：10 分鐘", duration_report)
+            self.assertIn("指定時長：30 分鐘", duration_report)
             self.assertIn("實際 MP3 時長：1.00 分鐘（60.0 秒）", duration_report)
             self.assertIn("送入 TTS 的逐字稿字數（不含空白）：4", duration_report)
             self.assertIn("本次實測語速：4.0 字／分鐘", duration_report)
-            self.assertIn("下次目標字數：約 40 字", duration_report)
+            self.assertIn("下次目標字數：約 120 字", duration_report)
             source_list = mp3_path.with_name(
                 f"{mp3_path.stem}_sources.txt"
             ).read_text(encoding="utf-8")
             self.assertIn("Computing industry outlook", source_list)
             self.assertNotIn("Employment report", source_list)
             generate_report.assert_called_once()
-            self.assertEqual(generate_report.call_args.args[4], 10)
+            self.assertEqual(generate_report.call_args.args[4], 30)
             synthesize.assert_called_once()
             self.assertEqual(
                 synthesize.call_args.args[1],
