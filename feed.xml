@@ -1,0 +1,46 @@
+<?xml version='1.0' encoding='utf-8'?>
+<rss xmlns:atom="http://www.w3.org/2005/Atom" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd" version="2.0">
+  <channel>
+    <title>台灣上班日美股財經 Podcast</title>
+    <link>https://a355337.github.io/Post-Market-Recap</link>
+    <description>每集整理美股市場、總體經濟與重要企業消息，提供繁體中文音訊節目。</description>
+    <language>zh-TW</language>
+    <atom:link href="https://a355337.github.io/Post-Market-Recap/feed.xml" rel="self" type="application/rss+xml" />
+    <itunes:author>台灣上班日美股財經 Podcast</itunes:author>
+    <itunes:owner>
+      <itunes:name>台灣上班日美股財經 Podcast</itunes:name>
+      <itunes:email>a355337@gmail.com</itunes:email>
+    </itunes:owner>
+    <itunes:explicit>false</itunes:explicit>
+    <itunes:type>episodic</itunes:type>
+    <itunes:image href="https://a355337.github.io/Post-Market-Recap/cover.png" />
+    <itunes:category text="Business">
+      <itunes:category text="Investing" />
+    </itunes:category>
+    <item>
+      <title>主題報告EP1｜黃仁勳｜20261127</title>
+      <link>https://a355337.github.io/Post-Market-Recap/audio/%E4%B8%BB%E9%A1%8C%E5%A0%B1%E5%91%8AEP1%EF%BD%9C%E9%BB%83%E4%BB%81%E5%8B%B3%EF%BD%9C20261127.mp3</link>
+      <guid isPermaLink="true">https://a355337.github.io/Post-Market-Recap/audio/%E4%B8%BB%E9%A1%8C%E5%A0%B1%E5%91%8AEP1%EF%BD%9C%E9%BB%83%E4%BB%81%E5%8B%B3%EF%BD%9C20261127.mp3</guid>
+      <description>主題報告｜黃仁勳｜2026-11-27（台灣時間）
+
+各位聽眾朋友大家好，歡迎收聽今天的財經專題節目。今天是二零二六年十一月二十七日，我們將目光聚焦於近期震撼全球科技與金融市場的核心人物，也就是輝達的掌舵者黃仁勳 [S18]。在過去這一段時間裡，黃仁勳的一舉一動、其個人的動態以及他所帶領的企業，再度成為全球媒體與投資人熱議的焦點，特別是當我們將這些發展放回當前的美國經濟與地緣政治脈絡中檢視，更凸顯出這場科技浪潮的深遠影響 [S22]。
+
+首先，我們必須回顧黃仁勳近期重新回任輝達的相關消息，這在市場上掀起了巨大的波瀾 [S18]。根據外媒與相關市場報導指出，黃仁勳的回歸一度為台股及相關半導體市場帶來了短暫的慶祝行情，甚至引發了市場的狂熱，但隨之而來的卻是嚴峻的半導體黑天鵝風險與劇烈的市場震盪 [S18, S20]。例如台指期夜盤在相關消息後曾出現大幅殺跌的走勢，顯示出投資人在面對黃仁勳回任時，心情相當複雜，既期待他能繼續帶領企業衝刺，又擔憂潛在的市場變數 [S18]。有媒體報導甚至形容這是台灣股市在狂歡之後面臨的考驗，凸顯出台灣供應鏈與這位科技巨頭之間密不可分的緊密連結 [S20]。
+
+除了經營層面的回任，黃仁勳個人的公開亮相與形象轉變也成為大眾津津樂道的話題。當他強勢回歸輝達時，外界赫然發現他招牌的皮衣竟然不見了 [S21]。這個看似微小的外在變化，也引發了財經與媒體圈的各種解讀，甚至有前主播在評論中深入剖析其背後可能代表的深意，認為這其中相當有學問 [S21]。不過，相較於衣著的轉變，更受市場所關注的是企業內部的治理結構與高層動向。有外媒指出，黃仁勳的重新掌舵可能只是開始，市場甚至傳出輝達在治理方面遭到外界質疑有失能之嫌，年底前甚至可能還會有董事面臨離職的傳聞 [S24]。這些公司治理與人事上的波動，為這家市值龐大的AI巨頭增添了幾分不確定性 [S24]。
+
+更引人矚目的是，黃仁勳的個人私領域新聞近期也躍上國際媒體版面。根據《華爾街日報》的報導指出，關於黃仁勳的婚外情傳聞有了新的進展，美方所掌握的證據顯示，這屬於戀愛關係而非間諜行為 [S25]。這類高階企業領袖的私生活動態，在當前高度敏感的地緣政治與美中科技競爭環境下，往往會被放大檢視，甚至牽動投資人對於企業穩定度的神經。
+
+從宏觀的政經戰略角度來看，黃仁勳與美國政府、乃至於新上任的川普政府之間的互動，更是牽動全球半導體命脈的關鍵。有分析指出，從企業入股英特爾的動態到黃仁勳的回任，美國經濟與這些頂尖的AI巨頭已經被牢牢綁在一起 [S22]。在川普政府的框架下，黃仁勳的動向備受保護，但也伴隨著中美晶片戰方興未艾的巨大壓力 [S23]。市場甚至擔憂，未來是否會再度掀起新一波的獵巫行動，這讓身處風口浪尖的黃仁勳以及他所代表的半導體帝國，隨時都得應對來自地緣政治的嚴峻挑戰 [S23]。
+
+如果我們把視野拉得更廣，就會發現黃仁勳所引領的AI與半導體浪潮，已經徹底改變了全球經濟的基礎結構。根據二零二六年最新公布的市場與產業數據，半導體晶片在今年正式超越了石油與天然氣，成為全球貿易與經濟中如同新石油般的最核心戰略物資 [S01]。正是這波持續延燒的AI熱潮，強力驅動了對先進晶片的海量需求，讓半導體的地位攀上前所未有的高峰 [S01]。然而，這也意味著任何與黃仁勳、輝達或是半導體供應鏈相關的風吹草動，都足以牽動全球金融市場的神經。
+
+綜觀全局，當我們在二零二六年尾聲回看黃仁勳的最新動態，從他個人的回任、形象轉變、私領域風波，到大環境下美國經濟與AI巨頭的深度綁定，以及中美晶片戰帶來的持續風險，我們看到的是一個集科技創新、地緣政治、企業治理與個人魅力於一身的複雜圖景。這場由AI與半導體主導的時代大戲才正要進入深水區，而黃仁勳的一言一行，依舊是全球市場不得不緊盯的最強風向球。感謝您的收聽，我們下次見。</description>
+      <enclosure url="https://a355337.github.io/Post-Market-Recap/audio/%E4%B8%BB%E9%A1%8C%E5%A0%B1%E5%91%8AEP1%EF%BD%9C%E9%BB%83%E4%BB%81%E5%8B%B3%EF%BD%9C20261127.mp3" length="4299308" type="audio/mpeg" />
+      <pubDate>Thu, 26 Nov 2026 17:34:55 GMT</pubDate>
+      <itunes:author>台灣上班日美股財經 Podcast</itunes:author>
+      <itunes:explicit>false</itunes:explicit>
+      <itunes:episodeType>full</itunes:episodeType>
+    </item>
+  </channel>
+</rss>
