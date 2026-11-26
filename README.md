@@ -75,9 +75,24 @@ Copy-Item .env.example .env
 
 每次執行會用指定主題動態查詢 Google News RSS，並合併現有 RSS、SEC 與行情資料；文字模型依語意判斷相關來源，不依賴特定人物、公司或主題的程式碼別名。報告只根據提供且相關的來源撰寫；若沒有可引用的資料就會停止，不會憑空生成。`--minute` 可指定主題報告的目標長度（預設 10 分鐘，允許 1 至 120 分鐘），目前依實測 343.5 字／分鐘，提示模型每分鐘撰寫 344 至 380 個中文字；實際秒數由文字密度與 TTS 音訊長度決定。每次 MP3 完成後，程式會量測輸出 MP3 長度，並將指定/實際分鐘數、送入 TTS 的非空白字數、實測字/分鐘，以及依「本次字數 × 指定分鐘 ÷ 實際分鐘」推算的下次目標字數，存成 `_時長分析.txt`，供逐次修正參考。引用修復也會要求保留原稿篇幅，避免為補來源而大幅縮短。報告會附引用與來源清單，並使用既有的 TTS 模型及主持人聲音設定；相同主題的報告會累加 EP 編號，檔名為 `主題報告EP<編號>｜<主題>｜<日期>.mp3`，逐字稿使用相同檔名主體並存為 `.txt`，送交 TTS 前已清除來源標註的文字另存為 `_TTS逐字稿.txt`，來源另存 `_sources.txt`。Windows 不支援檔名中的半形 `|`，因此使用外觀相近的全形 `｜`。
 
-## 每日排程
+## GitHub Actions 自動生成與 GitHub Pages 發布
 
-讓程式在登入 Windows 時啟動，並由 Python 依 `Asia/Taipei` 時區等待工作日早上六點：
+GitHub Actions 會在台灣時間週一至週五早上 06:00 自動生成美股財經節目；也可在 GitHub 專案 **Actions → Generate and publish podcast → Run workflow** 輸入主題，手動生成主題報告。手動報告可設定 1 至 120 分鐘，預設 10 分鐘。
+
+首次使用前，請在 GitHub 專案 **Settings → Secrets and variables → Actions** 設定：
+
+- `GEMINI_API_KEY`（必要）：Google Gemini API key。
+- `PODCAST_EMAIL`（必要）：RSS 擁有者聯絡信箱，會公開顯示在 RSS feed。
+- `TWELVE_DATA_API_KEY`（選用）：行情資料 API key。
+- `SEC_USER_AGENT`（選用）：SEC EDGAR 聯絡資訊，例如 `TaiwanMarketPodcast/1.0 (you@example.com)`。
+
+先手動執行一次 workflow，讓它建立 `gh-pages` 分支；再到 **Settings → Pages** 將發布來源設為 `Deploy from a branch`、分支 `gh-pages`、目錄 `/(root)`。之後每次工作流程會把 MP3、RSS 與播放清單更新到 GitHub Pages，並保留舊集數。GitHub Pages 發布容量上限為 1 GB，請留意累積音檔大小。預設封面為程式產生的圖表設計；可在 `gh-pages` 分支根目錄放置自訂 `cover.png`（1400×1400 至 3000×3000），取代預設封面。
+
+RSS feed 位址為 `https://<GitHub 帳號>.github.io/<repository>/feed.xml`，可在 Spotify for Creators 的 RSS 設定中提交。GitHub Actions 排程由 GitHub 管理；需在預設分支保留此 workflow，且 GitHub Actions 有足夠用量。
+
+## 本機每日排程（備用）
+
+若不使用 GitHub Actions，也可讓程式在登入 Windows 時啟動，並由 Python 依 `Asia/Taipei` 時區等待工作日早上六點：
 
 ```powershell
 .\install_task.ps1

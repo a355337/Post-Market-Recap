@@ -884,7 +884,7 @@ def create_episode(episode_date: date, output_dir: Path) -> Path:
     else:
         transcript_sections = []
         all_sources, source_issues = collect_sources(
-            sec_user_agent=SEC_USER_AGENT,
+            sec_user_agent=os.getenv("SEC_USER_AGENT") or SEC_USER_AGENT,
             twelve_data_api_key=os.getenv("TWELVE_DATA_API_KEY", ""),
         )
         for issue in source_issues:
@@ -1052,7 +1052,7 @@ def create_subject_report(
 
     client = _create_client()
     all_sources, source_issues = collect_sources(
-        sec_user_agent=SEC_USER_AGENT,
+        sec_user_agent=os.getenv("SEC_USER_AGENT") or SEC_USER_AGENT,
         twelve_data_api_key=os.getenv("TWELVE_DATA_API_KEY", ""),
         subject=subject,
     )
@@ -1201,6 +1201,11 @@ def _parse_args() -> argparse.Namespace:
         help="Generate even if today is a weekend or Taiwan public holiday (with --once).",
     )
     parser.add_argument(
+        "--yes",
+        action="store_true",
+        help="Skip the interactive Gemini settings confirmation.",
+    )
+    parser.add_argument(
         "--output-dir",
         type=Path,
         default=DEFAULT_OUTPUT_DIR,
@@ -1229,8 +1234,9 @@ def confirm_gemini_settings() -> None:
 
 
 def main() -> None:
-    confirm_gemini_settings()
     args = _parse_args()
+    if not args.yes:
+        confirm_gemini_settings()
     if args.mode is None and args.subject is None:
         args.mode = "schedule"
     args.output_dir.mkdir(parents=True, exist_ok=True)

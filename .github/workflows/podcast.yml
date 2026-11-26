@@ -1,0 +1,93 @@
+name: Generate and publish podcast
+
+on:
+  schedule:
+    - cron: "0 22 * * 0-4"
+  workflow_dispatch:
+    inputs:
+      subject:
+        description: Topic to research and turn into an audio report
+        required: true
+        type: string
+      minute:
+        description: Target length in minutes (1-120)
+        required: false
+        default: "10"
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: podcast-publish
+  cancel-in-progress: false
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Validate required secrets
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          PODCAST_EMAIL: ${{ secrets.PODCAST_EMAIL }}
+        run: |
+          if [[ -z "$GEMINI_API_KEY" || -z "$PODCAST_EMAIL" ]]; then
+            echo "Configure the GEMINI_API_KEY and PODCAST_EMAIL repository secrets." >&2
+            exit 1
+          fi
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+
+      - name: Generate daily market episode or requested topic
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          TWELVE_DATA_API_KEY: ${{ secrets.TWELVE_DATA_API_KEY }}
+          SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
+          SUBJECT: ${{ inputs.subject }}
+          MINUTE: ${{ inputs.minute || '10' }}
+        run: |
+          if [[ "$GITHUB_EVENT_NAME" == "schedule" ]]; then
+            python podcast.py --once --yes
+          else
+            python podcast.py --subject "$SUBJECT" --minute "$MINUTE" --yes
+          fi
+
+      - name: Prepare existing GitHub Pages content
+        run: |
+          mkdir -p public
+          if git ls-remote --exit-code --heads origin gh-pages >/dev/null; then
+            git fetch origin gh-pages
+            git archive FETCH_HEAD | tar -x -C public
+          else
+            status=$?
+            if [[ "$status" -ne 2 ]]; then
+              exit "$status"
+            fi
+          fi
+
+      - name: Build audio library and RSS feed
+        env:
+          PODCAST_EMAIL: ${{ secrets.PODCAST_EMAIL }}
+          PAGES_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}
+        run: |
+          python publish_podcast.py \
+            --audio-dir output \
+            --site-dir public \
+            --base-url "$PAGES_URL" \
+            --email "$PODCAST_EMAIL"
+
+      - name: Publish GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_branch: gh-pages
+          publish_dir: public

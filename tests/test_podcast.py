@@ -670,12 +670,13 @@ class SubjectReportTests(unittest.TestCase):
     def test_subject_option_parses_without_daily_mode(self) -> None:
         with patch(
             "sys.argv",
-            ["podcast.py", "--subject", "黃仁勳", "--minute", "10"],
+            ["podcast.py", "--subject", "黃仁勳", "--minute", "10", "--yes"],
         ):
             args = _parse_args()
 
         self.assertEqual(args.subject, "黃仁勳")
         self.assertEqual(args.target_minutes, 10)
+        self.assertTrue(args.yes)
         self.assertIsNone(args.mode)
 
     def test_report_synthesizes_with_existing_tts_and_writes_outputs(self) -> None:
