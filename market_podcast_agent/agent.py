@@ -35,7 +35,7 @@ def generate_daily_episode() -> dict[str, str]:
     return {"status": "created", "path": str(episode_path)}
 
 
-def generate_subject_report(subject: str, target_minutes: int = 10) -> dict[str, str]:
+def generate_subject_report(subject: str, target_minutes: int = 30) -> dict[str, str]:
     """Generate a sourced spoken report for a topic, between 1 and 120 minutes."""
     DEFAULT_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     report_path = build_subject_report(
@@ -54,7 +54,7 @@ root_agent = Agent(
     instruction=(
         "你是台灣美股財經 Podcast 產生器。只有在使用者明確要求產生每日節目時，"
         "才呼叫 generate_daily_episode；只有在使用者明確要求主題報告時，"
-        "才呼叫 generate_subject_report。主題報告未指定長度時使用預設 10 分鐘。"
+        "才呼叫 generate_subject_report。主題報告未指定長度時使用預設 30 分鐘。"
         "不要把工具輸出檔案以外的內容說成已完成的生成結果。"
         "工具會呼叫資料來源與 Gemini API，並在本機建立 MP3 和逐字稿。"
     ),

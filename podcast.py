@@ -55,8 +55,8 @@ GEMINI_RETRY_INITIAL_DELAY = 1.0
 GEMINI_RETRY_MAX_DELAY = 60.0
 GEMINI_CITATION_REPAIR_ATTEMPTS = 3
 GEMINI_PROGRESS_INTERVAL = 30.0
-SUBJECT_REPORT_CHARS_PER_MINUTE_MIN = 344
-SUBJECT_REPORT_CHARS_PER_MINUTE_MAX = 380
+SUBJECT_REPORT_CHARS_PER_MINUTE_MIN = 688
+SUBJECT_REPORT_CHARS_PER_MINUTE_MAX = 760
 EPISODE_SECTIONS = (
     ("開場與隔夜市場", "最新美股交易日、主要指數、整體市場情緒與重要變化。"),
     ("利率與總體經濟", "美國公債殖利率、通膨、就業與近期重要經濟數據。"),
@@ -385,7 +385,7 @@ def generate_subject_report(
     subject: str,
     report_date: date,
     sources: list[SourceItem],
-    target_minutes: int = 10,
+    target_minutes: int = 30,
 ) -> tuple[str, set[str]]:
     if not sources:
         raise RuntimeError(f"No source material is available for subject {subject!r}.")
@@ -1032,7 +1032,7 @@ def create_episode(episode_date: date, output_dir: Path) -> Path:
 def create_subject_report(
     subject: str,
     output_dir: Path,
-    target_minutes: int = 10,
+    target_minutes: int = 30,
 ) -> Path:
     subject = subject.strip()
     if not subject:
@@ -1191,9 +1191,9 @@ def _parse_args() -> argparse.Namespace:
         "--minute",
         dest="target_minutes",
         type=int,
-        default=10,
+        default=30,
         metavar="MINUTES",
-        help="Target duration for a subject report (1-120 minutes; default: 10).",
+        help="Target duration for a subject report (1-120 minutes; default: 30).",
     )
     parser.add_argument(
         "--force",
@@ -1218,7 +1218,7 @@ def _parse_args() -> argparse.Namespace:
         parser.error("--force can only be used with --once.")
     if args.target_minutes < 1 or args.target_minutes > 120:
         parser.error("--minute must be between 1 and 120.")
-    if args.subject is None and args.target_minutes != 10:
+    if args.subject is None and args.target_minutes != 30:
         parser.error("--minute can only be used with --subject.")
     return args
 
